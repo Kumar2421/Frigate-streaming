@@ -1,0 +1,33 @@
+# Custom Frigate Docker image with DeepOCSORT support
+FROM ghcr.io/blakeblackshear/frigate:stable
+
+# Install Python dependencies for DeepOCSORT
+USER root
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch (CPU version)
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install DeepOCSORT and ReID dependencies
+RUN pip3 install \
+    deepocsort \
+    torchreid \
+    opencv-python \
+    numpy \
+    scipy \
+    scikit-learn
+
+# Download ReID model
+RUN python3 -c "import torchreid; torchreid.models.build_model('osnet_x1_0', num_classes=1000, pretrained=True)"
+
+# Switch back to frigate user
+USER frigate
+
+# Expose the same ports as the original image
+EXPOSE 5000

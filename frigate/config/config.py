@@ -68,6 +68,7 @@ from .network import NetworkingConfig
 from .proxy import ProxyConfig
 from .telemetry import TelemetryConfig
 from .tls import TlsConfig
+from .tracker_config import TrackerConfig
 from .ui import UIConfig
 
 __all__ = ["FrigateConfig"]
@@ -371,6 +372,9 @@ class FrigateConfig(FrigateBaseModel):
     )
     detect: DetectConfig = Field(
         default_factory=DetectConfig, title="Global object tracking configuration."
+    )
+    tracker: TrackerConfig = Field(
+        default_factory=TrackerConfig, title="Object tracker configuration."
     )
     ffmpeg: FfmpegConfig = Field(
         default_factory=FfmpegConfig, title="Global FFmpeg configuration."

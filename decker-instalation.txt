@@ -1,0 +1,25 @@
+# ========================================
+# Frigate with DeepOCSORT Docker Setup
+# ========================================
+
+# Method 1: Build custom image with DeepOCSORT support
+# Build the custom Docker image
+docker build -f Dockerfile.deepocsort -t frigate-deepocsort:latest .
+
+# Create config directory and file
+New-Item -ItemType Directory -Path "config" -Force
+Copy-Item "config\config.yml.example" "config\config.yml"
+
+# Run with custom DeepOCSORT image
+docker run --rm --publish=5000:5000 --volume="${PWD}/config:/config" frigate-deepocsort:latest
+
+# ========================================
+# Alternative: Use Docker Compose
+# ========================================
+# docker-compose -f docker-compose.deepocsort.yml up -d
+
+# ========================================
+# Original Frigate (without DeepOCSORT)
+# ========================================
+# docker pull ghcr.io/blakeblackshear/frigate:stable
+# docker run --rm --publish=5000:5000 --volume="${PWD}/config:/config" ghcr.io/blakeblackshear/frigate:stable

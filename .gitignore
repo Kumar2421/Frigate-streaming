@@ -1,14 +1,80 @@
-.DS_Store
-__pycache__
+# Frigate with DeepOCSORT - Git Ignore File
+
+# Docker
+*.log
+input/clips/
+input/recordings/
+config/frigate.db*
+config/frigate.db-shm
+config/frigate.db-wal
+config/backup.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .mypy_cache
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# IDE
+.vscode/
+.idea/
 *.swp
-debug
-.vscode/*
-!.vscode/launch.json
-config/*
-!config/*.example
-models
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Media files (too large for git)
 *.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+
+# Frigate specific
 *.db
 *.csv
 frigate/version.py
@@ -17,15 +83,74 @@ web/node_modules
 web/coverage
 core
 !/web/**/*.ts
-.idea/*
 .ipynb_checkpoints
-# MQTT logs
+
+# MQTT logs and data
 mqtt/log/
 mqtt/data/
+
 # Media files
 media/
+
 # Custom detector build files
 custom-detector/web-source/
-# Backup files
-*.backup
-*.bak
+
+# Model cache (will be downloaded automatically)
+model_cache/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# next.js build output
+.next
+
+# nuxt.js build output
+.nuxt
+
+# vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port

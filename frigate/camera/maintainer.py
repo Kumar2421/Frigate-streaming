@@ -136,6 +136,7 @@ class CameraMaintainer(threading.Thread):
             self.ptz_metrics[name],
             self.region_grids[name],
             self.stop_event,
+            self.config.tracker,
         )
         self.camera_processes[config.name] = camera_process
         camera_process.start()

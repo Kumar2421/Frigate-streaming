@@ -380,6 +380,29 @@ export interface FrigateConfig {
     width: number | null;
   };
 
+  tracker: {
+    type: "norfair" | "centroid" | "deepocsort";
+    deepocsort?: {
+      det_thresh: number;
+      max_age: number;
+      min_hits: number;
+      iou_threshold: number;
+      delta_t: number;
+      asso_func: string;
+      inertia: number;
+      w_association_emb: number;
+      alpha_fixed_emb: number;
+      aw_param: number;
+      embedding_off: boolean;
+      cmc_off: boolean;
+      aw_off: boolean;
+      new_kf_off: boolean;
+      reid_model_path: string;
+      reid_device: string;
+      reid_threshold: number;
+    };
+  };
+
   detectors: {
     coral: {
       device: string;

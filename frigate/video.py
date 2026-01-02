@@ -32,6 +32,8 @@ from frigate.object_detection.base import RemoteObjectDetector
 from frigate.ptz.autotrack import ptz_moving_at_frame_time
 from frigate.track import ObjectTracker
 from frigate.track.norfair_tracker import NorfairTracker
+from frigate.track.deepocsort_tracker import DeepOCSORTTracker
+from frigate.config import TrackerTypeEnum
 from frigate.track.tracked_object import TrackedObjectAttribute
 from frigate.util.builtin import EventsPerSecond, get_tomorrow_at_time
 from frigate.util.image import (
@@ -522,6 +524,7 @@ class CameraTracker(FrigateProcess):
         ptz_metrics: PTZMetrics,
         region_grid: list[list[dict[str, Any]]],
         stop_event: MpEvent,
+        tracker_config=None,
     ) -> None:
         super().__init__(
             stop_event,
@@ -537,6 +540,7 @@ class CameraTracker(FrigateProcess):
         self.camera_metrics = camera_metrics
         self.ptz_metrics = ptz_metrics
         self.region_grid = region_grid
+        self.tracker_config = tracker_config
 
     def run(self) -> None:
         self.pre_run_setup()
@@ -558,7 +562,19 @@ class CameraTracker(FrigateProcess):
             self.stop_event,
         )
 
-        object_tracker = NorfairTracker(self.config, self.ptz_metrics)
+        # Initialize tracker based on configuration
+        if self.tracker_config and self.tracker_config.type == TrackerTypeEnum.deepocsort:
+            if self.tracker_config.deepocsort:
+                object_tracker = DeepOCSORTTracker(
+                    self.config,
+                    self.ptz_metrics,
+                    reid_model_path=self.tracker_config.deepocsort.reid_model_path,
+                    device=self.tracker_config.deepocsort.reid_device,
+                )
+            else:
+                object_tracker = DeepOCSORTTracker(self.config, self.ptz_metrics)
+        else:
+            object_tracker = NorfairTracker(self.config, self.ptz_metrics)
 
         frame_manager = SharedMemoryFrameManager()
 

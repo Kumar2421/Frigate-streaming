@@ -27,6 +27,11 @@ type FrigateObjectState = {
   attributes: {
     [key: string]: number;
   };
+  reid_matches?: {
+    matched_track_id: string;
+    similarity: number;
+    timestamp: number;
+  }[];
 };
 
 export interface FrigateReview {

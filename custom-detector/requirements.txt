@@ -1,0 +1,28 @@
+# DeepSORT and tracking dependencies
+deep-sort-realtime>=1.2.1
+filterpy>=1.4.5
+lap>=0.4.0
+cython>=0.29.0
+cython-bbox>=0.1.3
+
+# Core computer vision
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+numpy>=1.24.0,<2.0.0
+scipy>=1.10.0
+pillow>=9.5.0
+
+# ReID and feature extraction
+torch>=2.0.0
+torchvision>=0.15.0
+tensorflow>=2.13.0
+keras>=2.13.0
+
+# Additional utilities
+tqdm>=4.65.0
+pyyaml>=6.0
+requests>=2.31.0
+psutil>=5.9.0
+
+# Performance monitoring
+memory-profiler>=0.60.0

@@ -1,42 +1,52 @@
 services:
-  devcontainer:
-    container_name: frigate-devcontainer
-    # Check host system's actual render/video/plugdev group IDs with 'getent group render', 'getent group video', and 'getent group plugdev'
-    # Must add these exact IDs in container's group_add section or OpenVINO GPU acceleration will fail
-    group_add:
-      - "109" # render
-      - "110" # render
-      - "44"  # video
-      - "46"  # plugdev
-    shm_size: "256mb"
+  frigate:
+    container_name: frigate
     build:
-      context: .
-      dockerfile: docker/main/Dockerfile
-      # Use target devcontainer-trt for TensorRT dev
-      target: devcontainer
-    ## Uncomment this block for nvidia gpu support
-    # deploy:
-    #       resources:
-    #           reservations:
-    #               devices:
-    #                   - driver: nvidia
-    #                     count: 1
-    #                     capabilities: [gpu]
+      context: ./custom-detector
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+      - "8554:8554" # RTSP feeds
+      - "8555:8555" # WebRTC over tcp
+      - "8556:8556" # WebRTC over udp
     environment:
-      YOLO_MODELS: ""
-    # devices:
-      # - /dev/bus/usb:/dev/bus/usb # Uncomment for Google Coral USB
-      # - /dev/dri:/dev/dri # for intel hwaccel, needs to be updated for your hardware
+      FRIGATE_V4L2_DEVICE: /dev/dri/renderD128
+      DEEPSORT_ENABLED: "true"
+      DEEPSORT_MAX_AGE: "30"
+      DEEPSORT_N_INIT: "3"
+      DEEPSORT_MAX_IOU_DISTANCE: "0.7"
+      DEEPSORT_MAX_COSINE_DISTANCE: "0.2"
+      DEEPSORT_NN_BUDGET: "100"
+      USE_DEEPSORT: "true"
     volumes:
-      - .:/workspace/frigate:cached
-      - ./web/dist:/opt/frigate/web:cached
-      - /etc/localtime:/etc/localtime:ro
-      - ./config:/config
-      - ./debug:/media/frigate
-     # - /dev/bus/usb:/dev/bus/usb # Uncomment for Google Coral USB
+      - /mnt/additional-disk/frigate/config:/config
+      - /mnt/additional-disk/frigate/media:/media/frigate
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+    devices:
+      - /dev/bus/usb:/dev/bus/usb # passes the USB Coral, needs to be modified for other versions
+      - /dev/dri/renderD128:/dev/dri/renderD128 # for intel hwaccel, needs to be updated for your hardware
+    shm_size: "64m"
+    privileged: true
+    networks:
+      - frigate
+
   mqtt:
     container_name: mqtt
     image: eclipse-mosquitto:2.0
-    command: mosquitto -c /mosquitto-no-auth.conf # enable no-auth mode
+    restart: unless-stopped
     ports:
       - "1883:1883"
+    volumes:
+      - /mnt/additional-disk/frigate/mqtt/config:/mosquitto/config
+      - /mnt/additional-disk/frigate/mqtt/data:/mosquitto/data
+      - /mnt/additional-disk/frigate/mqtt/log:/mosquitto/log
+    networks:
+      - frigate
+
+networks:
+  frigate:
+    driver: bridge

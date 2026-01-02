@@ -19,3 +19,13 @@ core
 !/web/**/*.ts
 .idea/*
 .ipynb_checkpoints
+# MQTT logs
+mqtt/log/
+mqtt/data/
+# Media files
+media/
+# Custom detector build files
+custom-detector/web-source/
+# Backup files
+*.backup
+*.bak

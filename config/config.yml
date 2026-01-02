@@ -1,0 +1,397 @@
+mqtt:
+  enabled: true
+  host: broker.emqx.io
+  port: 1883
+
+# Optional: logger verbosity settings
+logger:
+  # Optional: Default log verbosity (default: shown below)
+  default: debug
+  # Optional: Component specific logger overrides
+  logs:
+    frigate.event: debug
+    frigate.mqtt: debug
+
+cameras:
+  license-plate-entry: # <------ Name the camera
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: /media/frigate/cars.mp4 # <----- Use Frigate's sample video with cars
+          input_args: -re -stream_loop -1 -fflags +genpts
+          roles:
+            - detect
+        # Alternative: Use video file for testing
+        # - path: /media/frigate/car-video.mp4
+        #   input_args: -re -stream_loop -1 -fflags +genpts
+        #   roles:
+        #     - detect
+        #     - record
+        # 
+        # Or use Frigate's sample video:
+        # - path: /media/frigate/car-stopping.mp4
+        #   input_args: -re -stream_loop -1 -fflags +genpts
+        #   roles:
+        #     - detect
+    detect:
+      enabled: true # <---- enable detection for LPR
+      width: 1280
+      height: 720
+      
+    objects:
+      track:
+        - car
+        - motorcycle
+        - truck
+        - bus
+        
+      filters:
+        car:
+          min_area: 1000
+          max_area: 200000
+          min_score: 0.1
+          threshold: 0.2
+        motorcycle:
+          min_area: 500
+          max_area: 100000
+          min_score: 0.1
+          threshold: 0.2
+        truck:
+          min_area: 2000
+          max_area: 300000
+          min_score: 0.1
+          threshold: 0.2
+        bus:
+          min_area: 3000
+          max_area: 500000
+          min_score: 0.1
+          threshold: 0.2
+        # person:
+        #   min_area: 500
+        #   max_area: 200000
+        #   min_score: 0.1
+        #   threshold: 0.2
+    lpr:
+      enabled: true
+    zones:
+      License-Plate-Capture:
+        coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+        inertia: 1
+        loitering_time: 0
+        objects: 
+          - car
+          - motorcycle
+          - truck
+          - bus
+    motion:
+      threshold: 50
+      contour_area: 10
+      improve_contrast: true
+      # --------------------------------------------------
+      
+  em-dept-exit: # <------ Name the camera
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://admin:Admin@123@121.200.48.187:554/Streaming/Channels/102 # <----- The stream you want to use for detection
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: true # <---- disable detection until you have a working camera feed
+      width: 1280
+      height: 720
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+    # zones:
+    #   Tex-Capture:
+    #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+    #     inertia: 1
+    #     loitering_time: 0
+    #     objects: person
+    motion:
+      threshold: 50
+      contour_area: 10
+      improve_contrast: true
+
+    zones:
+      Exit-Zone:
+        coordinates: 0.275,0.071,0.745,0.071,0.742,0.998,0.305,1
+        loitering_time: 0
+        objects: person
+  em-dept-entry: # <------ Name the camera
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://admin:Admin@123@121.200.50.147:554/Streaming/Channels/102 # <----- The stream you want to use for detection
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: true # <---- disable detection until you have a working camera feed
+      width: 1280
+      height: 720
+    # zones:
+    #   Tex-Capture:
+    #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+    #     inertia: 1
+    #     loitering_time: 0
+    #     objects: person
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+    motion:
+      threshold: 50
+      contour_area: 10
+      improve_contrast: true
+  em-dept-rightexit: # <------ Name the camera
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://admin:abcd@321@121.200.48.187:555/Streaming/Channels/102 # <----- The stream you want to use for detection
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: false # <---- disable detection until you have a working camera feed
+      width: 1280
+      height: 720
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+    motion:
+      mask: 0.023,0.02,0.333,0.018,0.333,0.099,0.016,0.124
+  em-dept-sideexit: # <------ Name the camera
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://admin:abcd@321@121.200.48.187:556/Streaming/Channels/102 # <----- The stream you want to use for detection
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: false # <---- disable detection until you have a working camera feed
+      width: 1280
+      height: 720
+    objects:
+      track:
+        - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+  # nar-b-entry: # <------ Name the camera
+  #   enabled: true
+  #   ffmpeg:
+  #     inputs:
+  #       - path: rtsp://admin:nspira@12@182.78.12.230:1024/live # <----- The stream you want to use for detection
+  #         roles:
+  #           - detect
+  #           - record
+  #   detect:
+  #     enabled: true # <---- disable detection until you have a working camera feed
+  #     width: 1280
+  #     height: 720
+  #   # zones:
+  #   #   Tex-Capture:
+  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+  #   #     inertia: 1
+  #   #     loitering_time: 0
+  #   #     objects: person
+  #   motion:
+  #     threshold: 50
+  #     contour_area: 10
+  #     improve_contrast: true
+  # nar-b-exit: # <------ Name the camera
+  #   enabled: true
+  #   ffmpeg:
+  #     inputs:
+  #       - path: rtsp://admin:nspira@12@182.78.12.230:1026/live # <----- The stream you want to use for detection
+  #         roles:
+  #           - detect
+  #           - record
+  #   detect:
+  #     enabled: false # <---- disable detection until you have a working camera feed
+  #     width: 1280
+  #     height: 720
+  #   # zones:
+  #   #   Tex-Capture:
+  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+  #   #     inertia: 1
+  #   #     loitering_time: 0
+  #   #     objects: person
+    # motion:
+    #   threshold: 50
+    #   contour_area: 10
+    #   improve_contrast: true
+  # tex-entry: # <------ Name the camera
+  #   enabled: true
+  #   ffmpeg:
+  #     inputs:
+  #       - path: rtsp://admin:Admin@123@103.110.239.201:563/live # <----- The stream you want to use for detection
+  #         roles:
+  #           - detect
+  #           - record
+  #   # objects:
+  #   #   track:
+  #   #     - car
+  #   detect:
+  #     enabled: false # <---- disable detection until you have a working camera feed
+  #     width: 1280
+  #     height: 720
+  #   objects:
+  #     track:
+  #       - person
+  #     filters:
+  #       person:
+  #         min_area: 5000
+  #         max_area: 100000
+  #         min_score: 0.5
+  #         threshold: 0.7
+
+    # zones:
+    #   Tex-Capture:
+    #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+    #     inertia: 1
+    #     loitering_time: 0
+    #     objects: person
+    # motion:
+    #   threshold: 50
+    #   contour_area: 10
+    #   improve_contrast: true
+
+  # prozone-exit: # <------ Name the camera
+  #   enabled: true
+  #   ffmpeg:
+  #     inputs:
+  #       - path: rtsp://admin:prozone@321@163.47.211.117:554/live # <----- The stream you want to use for detection
+  #         roles:
+  #           - detect
+  #           - record
+  #   objects:
+  #     track:
+  #       - car
+  #   # detect:
+  #   #   enabled: true # <---- disable detection until you have a working camera feed
+  #   #   width: 1280
+  #   #   height: 720
+
+  #   # zones:
+  #   #   Tex-Capture:
+  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+  #   #     inertia: 1
+  #   #     loitering_time: 0
+  #   #     objects: person
+  #   motion:
+  #     threshold: 50
+  #     contour_area: 10
+  #     improve_contrast: true
+
+  # prozone-entry: # <------ Name the camera
+  #   enabled: true
+  #   ffmpeg:
+  #     inputs:
+  #       - path: rtsp://admin:skt@1234@163.47.211.117:555/live # <----- The stream you want to use for detection
+  #         roles:
+  #           - detect
+  #           - record
+  #   objects:
+  #     track:
+  #       - car
+  #   # detect:
+  #   #   enabled: true # <---- disable detection until you have a working camera feed
+  #   #   width: 1280
+  #   #   height: 720
+
+  #   # zones:
+  #   #   Tex-Capture:
+  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
+  #   #     inertia: 1
+  #   #     loitering_time: 0
+  #   #     objects: person
+  #   motion:
+  #     threshold: 50
+  #     contour_area: 10
+  #     improve_contrast: true
+
+record:
+  enabled: true
+  retain:
+    days: 7
+    mode: motion
+  alerts:
+    retain:
+      days: 30
+  detections:
+    retain:
+      days: 30
+snapshots:
+  enabled: true
+  retain:
+    default: 30
+version: 0.16-0
+camera_groups:
+  Emerald:
+    order: 1
+    icon: LuActivity
+    cameras:
+      - emer-exit
+      - emer-entry
+semantic_search:
+  enabled: true
+  reindex: false
+  model_size: small
+detect:
+  enabled: true
+
+# Global Detector Configuration
+detectors:
+  cpu1:
+    type: cpu
+
+# Global LPR Configuration
+lpr:
+  enabled: true
+
+# Global Tracker Configuration
+tracker:
+  type: deepocsort
+  deepocsort:
+    det_thresh: 0.3
+    max_age: 30
+    min_hits: 3
+    iou_threshold: 0.3
+    delta_t: 3
+    asso_func: "giou"
+    inertia: 0.2
+    w_association_emb: 0.75
+    alpha_fixed_emb: 0.95
+    aw_param: 0.5
+    embedding_off: false
+    cmc_off: false
+    aw_off: false
+    new_kf_off: false
+    reid_model_path: "osnet_x1_0"
+    reid_device: "cpu"
+    reid_threshold: 0.7

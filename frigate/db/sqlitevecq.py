@@ -22,9 +22,22 @@ class SqliteVecQueueDatabase(SqliteQueueDatabase):
         return conn
 
     def _load_vec_extension(self, conn: sqlite3.Connection) -> None:
-        conn.enable_load_extension(True)
-        conn.load_extension(self.sqlite_vec_path)
-        conn.enable_load_extension(False)
+        import os
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            conn.enable_load_extension(True)
+            conn.load_extension(self.sqlite_vec_path)
+            conn.enable_load_extension(False)
+        except Exception as e:
+            # SQLite vec extension may not be available on Windows
+            # This is optional for semantic search features
+            if os.name == "nt":  # Windows
+                logger.warning(f"SQLite vec extension not available on Windows. Semantic search features will be disabled. Error: {e}")
+            else:
+                logger.error(f"Failed to load SQLite vec extension: {e}")
+            conn.enable_load_extension(False)
 
     def _register_regexp(self, conn: sqlite3.Connection) -> None:
         def regexp(expr: str, item: str) -> bool:

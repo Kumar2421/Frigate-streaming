@@ -4,8 +4,14 @@ import threading
 
 import zmq
 
-SOCKET_PUB = "ipc:///tmp/cache/detector_pub"
-SOCKET_SUB = "ipc:///tmp/cache/detector_sub"
+import os
+# Windows doesn't support IPC sockets, use TCP instead
+if os.name == "nt":  # Windows
+    SOCKET_PUB = "tcp://127.0.0.1:5560"
+    SOCKET_SUB = "tcp://127.0.0.1:5561"
+else:
+    SOCKET_PUB = "ipc:///tmp/cache/detector_pub"
+    SOCKET_SUB = "ipc:///tmp/cache/detector_sub"
 
 
 class ZmqProxyRunner(threading.Thread):

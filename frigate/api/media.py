@@ -164,9 +164,15 @@ def latest_frame(
             frame_processor.get_current_frame_time(camera_name) + retry_interval
         ):
             if request.app.camera_error_image is None:
+                # Try logo.png first, then fallback to camera-error.jpg for compatibility
                 error_image = glob.glob(
-                    os.path.join(INSTALL_DIR, "frigate/images/camera-error.jpg")
+                    os.path.join(INSTALL_DIR, "frigate/images/logo.png")
                 )
+                
+                if len(error_image) == 0:
+                    error_image = glob.glob(
+                        os.path.join(INSTALL_DIR, "frigate/images/camera-error.jpg")
+                    )
 
                 if len(error_image) > 0:
                     request.app.camera_error_image = cv2.imread(

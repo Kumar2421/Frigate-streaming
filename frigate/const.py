@@ -1,19 +1,34 @@
 import os
 import re
 
-INSTALL_DIR = "/opt/frigate"
-CONFIG_DIR = "/config"
-DEFAULT_DB_PATH = f"{CONFIG_DIR}/frigate.db"
-MODEL_CACHE_DIR = f"{CONFIG_DIR}/model_cache"
-BASE_DIR = "/media/frigate"
-CLIPS_DIR = f"{BASE_DIR}/clips"
-EXPORT_DIR = f"{BASE_DIR}/exports"
-FACE_DIR = f"{CLIPS_DIR}/faces"
-THUMB_DIR = f"{CLIPS_DIR}/thumbs"
-RECORD_DIR = f"{BASE_DIR}/recordings"
-TRIGGER_DIR = f"{CLIPS_DIR}/triggers"
-BIRDSEYE_PIPE = "/tmp/cache/birdseye"
-CACHE_DIR = "/tmp/cache"
+# Windows-compatible path handling
+if os.name == "nt":  # Windows
+    INSTALL_DIR = os.environ.get("FRIGATE_INSTALL_DIR", os.path.join(os.getcwd(), "frigate"))
+    CONFIG_DIR = os.environ.get("FRIGATE_CONFIG_DIR", os.path.join(os.getcwd(), "config"))
+    BASE_DIR = os.environ.get("FRIGATE_RECORDINGS_DIR", os.path.join(os.getcwd(), "input"))
+    CACHE_DIR = os.environ.get("FRIGATE_CACHE_DIR", os.path.join(os.getcwd(), "cache"))
+    CLIPS_DIR = os.path.join(BASE_DIR, "clips")
+    EXPORT_DIR = os.path.join(BASE_DIR, "exports")
+    FACE_DIR = os.path.join(CLIPS_DIR, "faces")
+    THUMB_DIR = os.path.join(CLIPS_DIR, "thumbs")
+    RECORD_DIR = os.path.join(BASE_DIR, "recordings")
+    TRIGGER_DIR = os.path.join(CLIPS_DIR, "triggers")
+    BIRDSEYE_PIPE = os.path.join(CACHE_DIR, "birdseye")
+else:  # Linux/Unix
+    INSTALL_DIR = "/opt/frigate"
+    CONFIG_DIR = "/config"
+    BASE_DIR = "/media/frigate"
+    CLIPS_DIR = f"{BASE_DIR}/clips"
+    EXPORT_DIR = f"{BASE_DIR}/exports"
+    FACE_DIR = f"{CLIPS_DIR}/faces"
+    THUMB_DIR = f"{CLIPS_DIR}/thumbs"
+    RECORD_DIR = f"{BASE_DIR}/recordings"
+    TRIGGER_DIR = f"{CLIPS_DIR}/triggers"
+    BIRDSEYE_PIPE = "/tmp/cache/birdseye"
+    CACHE_DIR = "/tmp/cache"
+
+DEFAULT_DB_PATH = os.path.join(CONFIG_DIR, "frigate.db")
+MODEL_CACHE_DIR = os.path.join(CONFIG_DIR, "model_cache")
 FRIGATE_LOCALHOST = "http://127.0.0.1:5000"
 PLUS_ENV_VAR = "PLUS_API_KEY"
 PLUS_API_HOST = "https://api.frigate.video"

@@ -7,7 +7,12 @@ from typing import Any
 
 import zmq
 
-SOCKET_PUB_SUB = "ipc:///tmp/cache/config"
+import os
+# Windows doesn't support IPC sockets, use TCP instead
+if os.name == "nt":  # Windows
+    SOCKET_PUB_SUB = "tcp://127.0.0.1:5557"
+else:
+    SOCKET_PUB_SUB = "ipc:///tmp/cache/config"
 
 
 class ConfigPublisher:

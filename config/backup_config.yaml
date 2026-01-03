@@ -1,39 +1,53 @@
-mqtt:
-  enabled: true
-  host: broker.emqx.io
-  port: 1883
+# ============================================
+# BASIC FRIGATE CONFIGURATION
+# Advanced AI features (Gemini, DeepOCSORT, Whisper) are DISABLED
+# Only core Frigate features are enabled:
+# - Object Detection & Tracking (Norfair)
+# - Recording & Snapshots
+# - Motion Detection
+# - Camera Monitoring
+# ============================================
 
-# Optional: logger verbosity settings
+# Database configuration (use Docker volume to avoid Windows filesystem issues)
+database:
+  path: /db/frigate.db
+
+# Global Model Configuration
+# This model config will be used by all detectors unless overridden
+model:
+  model_type: yolo-generic  # YOLO generic type supports YOLO 8
+  width: 640  # YOLO 8 default input size (adjust based on your model)
+  height: 640  # YOLO 8 default input size (adjust based on your model)
+  input_tensor: nchw  # NCHW format for YOLO models
+  input_dtype: float  # Float32 input
+  input_pixel_format: bgr  # BGR color format
+  path: "/config/yolo8n.onnx"  # Absolute path to YOLO 8 ONNX model in Docker container
+  # labelmap_path is optional - Frigate will use default if not specified
+
+# MQTT - DISABLED (optional, enable if you need MQTT integration)
+mqtt:
+  enabled: false
+  # host: broker.emqx.io
+  # port: 1883
+
+# Logger configuration to reduce debug output
 logger:
-  # Optional: Default log verbosity (default: shown below)
-  default: debug
-  # Optional: Component specific logger overrides
+  default: warning
   logs:
-    frigate.event: debug
-    frigate.mqtt: debug
+    frigate.track: error
+    frigate.camera.state: error
+    frigate.embeddings: error
+    frigate.comms: error
+    frigate.events: error
+    frigate.track.tracked_object: error
+    frigate.track.object_processing: error
+    frigate.track.deepocsort_tracker: error
+
+# Note: DeepOCSORT tracking is not available in the stable Frigate version
+# Using default Norfair tracking instead
 
 cameras:
-  # tex-entry: # <------ Name the camera
-  #   enabled: true
-  #   ffmpeg:
-  #     inputs:
-  #       - path: rtsp://admin:Admin@123@103.110.239.201:556/live # <----- The stream you want to use for detection
-  #         roles:
-  #           - detect
-  #   detect:
-  #     enabled: false # <---- disable detection until you have a working camera feed
-  #     width: 1280
-  #     height: 720
-  #   zones:
-  #     Tex-Capture:
-  #       coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-  #       inertia: 1
-  #       loitering_time: 0
-  #       objects: person
-  #   motion:
-  #     threshold: 50
-  #     contour_area: 10
-  #     improve_contrast: true
+
   em-dept-exit: # <------ Name the camera
     enabled: true
     ffmpeg:
@@ -285,25 +299,38 @@ record:
   retain:
     days: 7
     mode: motion
-  alerts:
-    retain:
-      days: 30
-  detections:
-    retain:
-      days: 30
 snapshots:
   enabled: true
   retain:
     default: 30
-version: 0.15-1
+version: 0.17-0
 camera_groups:
   Emerald:
     order: 1
     icon: LuActivity
     cameras:
-      - emer-exit
-      - emer-entry
+      - em-dept-exit
+      - em-dept-entry
+# Semantic Search - DISABLED (Basic Frigate only)
 semantic_search:
+  enabled: false
+
+# Detectors Configuration
+# Using ONNX detector with YOLO 8 model
+# YOLO 8 provides better accuracy than CPU detector
+# Model config is in global 'model:' section above
+detectors:
+  onnx:
+    type: onnx
+    device: AUTO  # AUTO, CPU, or GPU (if available)
+    # Model config will be inherited from global model: section
+
+# FFmpeg Configuration
+# In Docker, FFmpeg is pre-installed - no path configuration needed
+# For native Windows, uncomment and set path:
+# ffmpeg:
+#   path: "ffmpeg"  # or full path like "C:/ffmpeg/bin/ffmpeg"
+
+# Basic Detection - ENABLED
+detect:
   enabled: true
-  reindex: false
-  model_size: small

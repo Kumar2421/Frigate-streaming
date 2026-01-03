@@ -101,7 +101,10 @@ def reopen_std_streams() -> None:
     sys.stderr = os.fdopen(2, "w")
 
 
-os.register_at_fork(after_in_child=reopen_std_streams)
+# Only register fork handler on Unix-like systems (Linux, macOS)
+# Windows doesn't support os.register_at_fork
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=reopen_std_streams)
 
 
 # based on https://codereview.stackexchange.com/a/17959

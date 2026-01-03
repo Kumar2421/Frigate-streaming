@@ -8,6 +8,7 @@ config/frigate.db*
 config/frigate.db-shm
 config/frigate.db-wal
 config/backup.db
+cache/  # ZeroMQ IPC sockets and cache files
 
 # Python
 __pycache__/
@@ -75,7 +76,18 @@ Thumbs.db
 
 # Model cache (will be downloaded automatically)
 model_cache/
-
+config/model_cache/
+config/frigate.db*
+config/frigate.db-shm
+config/frigate.db-wal
+config/backup.db
+config/yolo8n.onnx
+config/yolo8n.pt
+config/yolo12n.onnx
+config/yolo12s.pt
+config/yolo12m.pt
+config/yolo12l.pt
+config/yolo12x.pt
 # Environment variables
 .env
 .env.local

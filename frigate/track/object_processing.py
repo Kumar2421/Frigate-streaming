@@ -9,6 +9,7 @@ from enum import Enum
 from multiprocessing import Queue as MpQueue
 from multiprocessing.synchronize import Event as MpEvent
 from typing import Any
+from frigate.track.deepocsort_tracker import DeepOCSORTTracker
 
 import cv2
 import numpy as np
@@ -109,6 +110,12 @@ class TrackedObjectProcessor(threading.Thread):
 
         for camera in self.config.cameras.keys():
             self.create_camera_state(camera)
+
+                # Initialize DeepOCSORT tracker (only if enabled in config)
+        if self.config.track.type == "deepocsort":
+            self.deep_tracker = DeepOCSORTTracker(self.config.camera, self.ptz_metrics)
+        else:
+            self.deep_tracker = None
 
     def create_camera_state(self, camera: str) -> None:
         """Creates a new camera state."""
@@ -251,9 +258,7 @@ class TrackedObjectProcessor(threading.Thread):
         # if there are required zones and there is no overlap
         required_zones = snapshot_config.required_zones
         if len(required_zones) > 0 and not set(obj.entered_zones) & set(required_zones):
-            logger.debug(
-                f"Not creating snapshot for {obj.obj_data['id']} because it did not enter required zones"
-            )
+            # Object did not enter required zones - skip snapshot
             return False
 
         return True
@@ -286,9 +291,7 @@ class TrackedObjectProcessor(threading.Thread):
         # if there are required zones and there is no overlap
         required_zones = self.config.cameras[camera].mqtt.required_zones
         if len(required_zones) > 0 and not set(obj.entered_zones) & set(required_zones):
-            logger.debug(
-                f"Not sending mqtt for {obj.obj_data['id']} because it did not enter required zones"
-            )
+            # Object did not enter required zones - skip MQTT
             return False
 
         return True
@@ -439,14 +442,11 @@ class TrackedObjectProcessor(threading.Thread):
                 }
 
                 self.requestor.send_data(UPSERT_REVIEW_SEGMENT, updated_data)
-                logger.debug(
-                    f"Updated sub_label for event {event_id} in review segment {review_segment.id}"
-                )
+                # Sub-label updated in review segment
 
             except DoesNotExist:
-                logger.debug(
-                    f"No review segment found with event ID {event_id} when updating sub_label"
-                )
+                # No review segment found for event
+                pass
 
     def set_object_attribute(
         self,
@@ -651,7 +651,7 @@ class TrackedObjectProcessor(threading.Thread):
         last_frame_name = camera_state.previous_frame_id
         for obj_id, obj in list(camera_state.tracked_objects.items()):
             if "end_time" not in obj.obj_data:
-                logger.debug(f"Camera {camera} disabled, ending active event {obj_id}")
+                # Camera disabled - ending active event
                 obj.obj_data["end_time"] = datetime.datetime.now().timestamp()
                 # end callbacks
                 for callback in camera_state.callbacks["end"]:
@@ -696,7 +696,7 @@ class TrackedObjectProcessor(threading.Thread):
                 camera_state = self.camera_states[camera]
 
                 if camera_state.prev_enabled and not current_enabled:
-                    logger.debug(f"Not processing objects for disabled camera {camera}")
+                    # Camera disabled - skipping object processing
                     self.force_end_all_events(camera, camera_state)
 
                 camera_state.prev_enabled = current_enabled
@@ -746,7 +746,7 @@ class TrackedObjectProcessor(threading.Thread):
                 continue
 
             if not self.config.cameras[camera].enabled:
-                logger.debug(f"Camera {camera} disabled, skipping update")
+                # Camera disabled - skipping update
                 continue
 
             camera_state = self.camera_states[camera]
@@ -757,9 +757,20 @@ class TrackedObjectProcessor(threading.Thread):
 
             self.update_mqtt_motion(camera, frame_time, motion_boxes)
 
-            tracked_objects = [
-                o.to_dict() for o in camera_state.tracked_objects.values()
-            ]
+            # -------------- tracking --------------
+            if self.deep_tracker:
+    # Feed detections into DeepOCSORT
+                self.deep_tracker.match_and_update(
+                    frame_name=frame_name,
+                    frame_time=frame_time,
+                    detections=current_tracked_objects
+                )
+                tracked_objects = list(self.deep_tracker.get_tracked_objects().values())
+            else:
+                tracked_objects = [
+                    o.to_dict() for o in camera_state.tracked_objects.values()
+                ]
+
 
             # publish info on this frame
             self.detection_publisher.publish(

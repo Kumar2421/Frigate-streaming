@@ -485,13 +485,26 @@ class RecordingMaintainer(threading.Thread):
                 try:
                     # get the segment size of the cache file
                     # file without faststart is same size
-                    segment_size = round(
-                        float(os.path.getsize(cache_path)) / pow(2, 20), 2
-                    )
-                except OSError:
+                    # Windows-compatible: handle path errors
+                    if os.path.exists(cache_path):
+                        segment_size = round(
+                            float(os.path.getsize(cache_path)) / pow(2, 20), 2
+                        )
+                    else:
+                        segment_size = 0
+                except (OSError, ValueError) as e:
+                    # Handle Windows path errors (Errno 22: Invalid argument)
+                    logger.debug(f"Could not get segment size for {cache_path}: {e}")
                     segment_size = 0
 
-                os.remove(cache_path)
+                # Windows-compatible file removal
+                try:
+                    if os.path.exists(cache_path):
+                        os.remove(cache_path)
+                except (OSError, PermissionError) as e:
+                    # Handle Windows file locking issues
+                    logger.debug(f"Could not remove cache file {cache_path}: {e}")
+                    # File may be in use, will be cleaned up later
 
                 rand_id = "".join(
                     random.choices(string.ascii_lowercase + string.digits, k=6)

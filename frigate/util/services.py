@@ -5,13 +5,20 @@ import json
 import logging
 import os
 import re
-import resource
 import shutil
 import signal
 import subprocess as sp
+import sys
 import traceback
 from datetime import datetime
 from typing import Any, List, Optional, Tuple
+
+# Import resource module only on Unix-like systems
+try:
+    import resource
+except ImportError:
+    # resource module is not available on Windows
+    resource = None
 
 import cv2
 import psutil
@@ -103,9 +110,18 @@ def get_docker_memlimit_bytes() -> int:
 
 def get_cpu_stats() -> dict[str, dict]:
     """Get cpu usages for each process id"""
+    import sys
     usages = {}
     docker_memlimit = get_docker_memlimit_bytes() / 1024
-    total_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024
+    
+    # Windows-compatible memory calculation
+    if sys.platform == "win32":
+        # Use psutil for Windows (os.sysconf doesn't exist on Windows)
+        system_mem = psutil.virtual_memory()
+        total_mem = system_mem.total / 1024  # Convert bytes to KB
+    else:
+        # Unix/Linux: use os.sysconf
+        total_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024
 
     system_cpu = psutil.cpu_percent(
         interval=None
@@ -122,28 +138,43 @@ def get_cpu_stats() -> dict[str, dict]:
             cpu_percent = process.info["cpu_percent"]
             cmdline = process.info["cmdline"]
 
-            with open(f"/proc/{pid}/stat", "r") as f:
-                stats = f.readline().split()
-            utime = int(stats[13])
-            stime = int(stats[14])
-            start_time = int(stats[21])
+            # Windows-compatible process stats
+            if sys.platform == "win32":
+                # Use psutil for Windows (no /proc filesystem)
+                try:
+                    proc = psutil.Process(int(pid))
+                    cpu_times = proc.cpu_times()
+                    # Calculate CPU usage using psutil
+                    cpu_average_usage = cpu_percent if cpu_percent else 0
+                    # Get memory info
+                    mem_info = proc.memory_info()
+                    mem_res = mem_info.rss / 1024  # Convert bytes to KB
+                except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+                    continue
+            else:
+                # Unix/Linux: read from /proc
+                with open(f"/proc/{pid}/stat", "r") as f:
+                    stats = f.readline().split()
+                utime = int(stats[13])
+                stime = int(stats[14])
+                start_time = int(stats[21])
 
-            with open("/proc/uptime") as f:
-                system_uptime_sec = int(float(f.read().split()[0]))
+                with open("/proc/uptime") as f:
+                    system_uptime_sec = int(float(f.read().split()[0]))
 
-            clk_tck = os.sysconf(os.sysconf_names["SC_CLK_TCK"])
+                clk_tck = os.sysconf(os.sysconf_names["SC_CLK_TCK"])
 
-            process_utime_sec = utime // clk_tck
-            process_stime_sec = stime // clk_tck
-            process_start_time_sec = start_time // clk_tck
+                process_utime_sec = utime // clk_tck
+                process_stime_sec = stime // clk_tck
+                process_start_time_sec = start_time // clk_tck
 
-            process_elapsed_sec = system_uptime_sec - process_start_time_sec
-            process_usage_sec = process_utime_sec + process_stime_sec
-            cpu_average_usage = process_usage_sec * 100 // process_elapsed_sec
+                process_elapsed_sec = system_uptime_sec - process_start_time_sec
+                process_usage_sec = process_utime_sec + process_stime_sec
+                cpu_average_usage = process_usage_sec * 100 // process_elapsed_sec if process_elapsed_sec > 0 else 0
 
-            with open(f"/proc/{pid}/statm", "r") as f:
-                mem_stats = f.readline().split()
-            mem_res = int(mem_stats[1]) * os.sysconf("SC_PAGE_SIZE") / 1024
+                with open(f"/proc/{pid}/statm", "r") as f:
+                    mem_stats = f.readline().split()
+                mem_res = int(mem_stats[1]) * os.sysconf("SC_PAGE_SIZE") / 1024
 
             if docker_memlimit > 0:
                 mem_pct = round((mem_res / docker_memlimit) * 100, 1)
@@ -760,6 +791,11 @@ def set_file_limit() -> None:
     # Newer versions of containerd 2.X+ impose a very low soft file limit of 1024
     # This applies to OSs like HA OS (see https://github.com/home-assistant/operating-system/issues/4110)
     # Attempt to increase this limit
+    # Note: resource module is not available on Windows, so this function is Unix-specific
+    if resource is None:
+        logger.debug("File limit setting not available on Windows")
+        return
+
     soft_limit = int(os.getenv("SOFT_FILE_LIMIT", "65536") or "65536")
 
     current_soft, current_hard = resource.getrlimit(resource.RLIMIT_NOFILE)

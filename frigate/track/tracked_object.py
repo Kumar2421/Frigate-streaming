@@ -55,6 +55,10 @@ class TrackedObject:
         del obj_data["score_history"]
 
         self.obj_data = obj_data
+        # 🔹 Replace tracker ID with ReID ID if available
+        if "reid_id" in obj_data:
+            self.obj_data["id"] = obj_data["reid_id"]
+
         self.colormap = model_config.colormap
         self.logos = model_config.all_attribute_logos
         self.camera_config = camera_config
@@ -176,9 +180,7 @@ class TrackedObject:
                     }
                     thumb_update = True
                 else:
-                    logger.debug(
-                        f"{self.camera_config.name}: Object frame time {obj_data['frame_time']} is not equal to the current frame time {current_frame_time}, not updating thumbnail"
-                    )
+                    pass  # Frame time mismatch - skip thumbnail update
 
         # check zones
         current_zones = []
@@ -244,14 +246,7 @@ class TrackedObject:
                         ):
                             in_speed_zone = True
 
-                        logger.debug(
-                            f"Camera: {self.camera_config.name}, tracked object ID: {self.obj_data['id']}, "
-                            f"zone: {name}, pixel velocity: {str(tuple(np.round(self.obj_data['estimate_velocity']).flatten().astype(int)))}, "
-                            f"speed magnitude: {speed_magnitude}, velocity angle: {self.velocity_angle}, "
-                            f"estimated speed: {self.current_estimated_speed:.1f}, "
-                            f"average speed: {self.average_estimated_speed:.1f}, "
-                            f"length: {len(self.speed_history)}"
-                        )
+                        # Speed calculation completed for zone tracking
 
                     # Check zone entry conditions - for speed zones, require both inertia and speed
                     if zone_score >= zone.inertia:
@@ -365,15 +360,11 @@ class TrackedObject:
                     # check Euclidean distance before appending
                     self.path_data.append((bottom_center, obj_data["frame_time"]))
                     path_update = True
-                    logger.debug(
-                        f"Point tracking: {obj_data['id']}, {bottom_center}, {obj_data['frame_time']}"
-                    )
+                    # Point tracking updated
 
         self.obj_data.update(obj_data)
         self.current_zones = current_zones
-        logger.debug(
-            f"{self.camera_config.name}: Updating {obj_data['id']}: thumb update? {thumb_update}, significant change? {significant_change}, path update? {path_update}, autotracker update? {autotracker_update} "
-        )
+        # Object update completed
         return (thumb_update, significant_change, path_update, autotracker_update)
 
     def to_dict(self) -> dict[str, Any]:
@@ -410,6 +401,9 @@ class TrackedObject:
             "velocity_angle": self.velocity_angle,
             "path_data": self.path_data.copy(),
             "recognized_license_plate": self.obj_data.get("recognized_license_plate"),
+            # ReID data for web interface
+            "reid_matches": self.obj_data.get("reid_matches", []),
+            "reid_id": self.obj_data.get("reid_id"),
         }
 
         return event
@@ -497,8 +491,14 @@ class TrackedObject:
                 ),
                 thickness=thickness,
                 color=color,
+                reid_matches=self.obj_data.get("reid_matches"),
             )
-
+            # -------------- tracking --------------
+            display_label = (
+                f"ReID-{self.obj_data['id']}"
+                if "reid_id" in self.obj_data
+                else self.obj_data["label"]
+            )
             # draw any attributes
             for attribute in self.thumbnail_data["attributes"]:
                 box = attribute["box"]
@@ -509,10 +509,12 @@ class TrackedObject:
                     box[1],
                     box[2],
                     box[3],
+                    display_label,
                     attribute["label"],
                     f"{attribute['score']:.0%} {str(box_area)}",
                     thickness=thickness,
                     color=color,
+                    reid_matches=None,  # Attributes don't have ReID matches
                 )
 
         if crop:

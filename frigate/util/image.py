@@ -204,15 +204,27 @@ def draw_box_with_label(
     thickness=2,
     color=None,
     position="ul",
+    reid_matches=None,
 ):
     if color is None:
         color = (0, 0, 255)
+    
+    # Format the display text with ReID information if available
     try:
-        display_text = transliterate_to_latin("{}: {}".format(label, info))
+        if "reid_id" in info:
+            display_text = transliterate_to_latin(f"{label}: ReID-{info['reid_id']}")
+        elif reid_matches and len(reid_matches) > 0:
+            latest_match = reid_matches[-1]
+            similarity = latest_match.get('similarity', 0.0)
+            matched_id = latest_match.get('matched_track_id', 'Unknown')
+            display_text = transliterate_to_latin(f"{label}: ReID-{matched_id} {similarity:.1f}%")
+        else:
+            display_text = transliterate_to_latin(f"{label}: {info}")
+
     except Exception:
         display_text = "{}: {}".format(label, info)
     cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), color, thickness)
-    font_scale = 0.5
+    font_scale = 0.5 
     font = cv2.FONT_HERSHEY_SIMPLEX
     # get the width and height of the text box
     size = cv2.getTextSize(display_text, font, fontScale=font_scale, thickness=2)
@@ -856,7 +868,9 @@ class SharedMemoryFrameManager(FrameManager):
                 self.shm_store[name] = shm
             return shm.buf
         except FileNotFoundError:
-            logger.info(f"the file {name} not found")
+            # Shared memory not created yet - this is normal during startup
+            # Only log at debug level to reduce noise
+            logger.debug(f"Shared memory frame {name} not found yet (may be normal during startup)")
             return None
 
     def get(self, name: str, shape) -> Optional[np.ndarray]:

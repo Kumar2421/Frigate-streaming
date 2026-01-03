@@ -70,21 +70,43 @@ class FfmpegConfig(FrigateBaseModel):
 
     @property
     def ffmpeg_path(self) -> str:
-        if self.path == "default":
-            return f"/usr/lib/ffmpeg/{DEFAULT_FFMPEG_VERSION}/bin/ffmpeg"
-        elif self.path in INCLUDED_FFMPEG_VERSIONS:
-            return f"/usr/lib/ffmpeg/{self.path}/bin/ffmpeg"
-        else:
-            return f"{self.path}/bin/ffmpeg"
+        import os
+        if os.name == "nt":  # Windows
+            if self.path == "default" or self.path == "ffmpeg":
+                return "ffmpeg"  # Use system PATH
+            elif self.path.endswith(".exe"):
+                return self.path
+            elif os.path.isdir(self.path):
+                return os.path.join(self.path, "bin", "ffmpeg.exe")
+            else:
+                return self.path
+        else:  # Linux/Unix
+            if self.path == "default":
+                return f"/usr/lib/ffmpeg/{DEFAULT_FFMPEG_VERSION}/bin/ffmpeg"
+            elif self.path in INCLUDED_FFMPEG_VERSIONS:
+                return f"/usr/lib/ffmpeg/{self.path}/bin/ffmpeg"
+            else:
+                return f"{self.path}/bin/ffmpeg"
 
     @property
     def ffprobe_path(self) -> str:
-        if self.path == "default":
-            return f"/usr/lib/ffmpeg/{DEFAULT_FFMPEG_VERSION}/bin/ffprobe"
-        elif self.path in INCLUDED_FFMPEG_VERSIONS:
-            return f"/usr/lib/ffmpeg/{self.path}/bin/ffprobe"
-        else:
-            return f"{self.path}/bin/ffprobe"
+        import os
+        if os.name == "nt":  # Windows
+            if self.path == "default" or self.path == "ffmpeg":
+                return "ffprobe"  # Use system PATH
+            elif self.path.endswith(".exe"):
+                return self.path.replace("ffmpeg", "ffprobe")
+            elif os.path.isdir(self.path):
+                return os.path.join(self.path, "bin", "ffprobe.exe")
+            else:
+                return self.path.replace("ffmpeg", "ffprobe")
+        else:  # Linux/Unix
+            if self.path == "default":
+                return f"/usr/lib/ffmpeg/{DEFAULT_FFMPEG_VERSION}/bin/ffprobe"
+            elif self.path in INCLUDED_FFMPEG_VERSIONS:
+                return f"/usr/lib/ffmpeg/{self.path}/bin/ffprobe"
+            else:
+                return f"{self.path}/bin/ffprobe"
 
 
 class CameraRoleEnum(str, Enum):

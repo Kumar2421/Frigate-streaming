@@ -167,6 +167,7 @@ class CameraState:
                     ),
                     thickness=thickness,
                     color=color,
+                    reid_matches=obj.get("reid_matches"),
                 )
 
                 # draw any attributes
@@ -183,6 +184,7 @@ class CameraState:
                         f"{attribute['score']:.0%} {str(box_area)}",
                         thickness=thickness,
                         color=color,
+                        reid_matches=None,  # Attributes don't have ReID matches
                     )
 
         if draw_options.get("regions"):
@@ -560,6 +562,7 @@ class CameraState:
                     f"{box.get('score', '-')}% {int(width * height)}",
                     thickness=2,
                     color=box.get("color", (255, 0, 0)),
+                    reid_matches=box.get("reid_matches"),
                 )
 
         ret, jpg = cv2.imencode(".jpg", img_frame)

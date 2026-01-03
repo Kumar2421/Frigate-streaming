@@ -11,7 +11,6 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-    Settings,
     Brain,
     Target,
     Zap,
@@ -80,7 +79,7 @@ export default function TrackerSettingsView() {
                     [field]: value,
                 },
             },
-        };
+        } as FrigateConfig;
 
         updateConfig(newConfig, false);
     };

@@ -1,7 +1,7 @@
 {
   "time": {
     "untilForTime": "Until {{time}}",
-    "untilForRestart": "Until Frigate restarts.",
+    "untilForRestart": "Until Fusion Nvr restarts.",
     "untilRestart": "Until restart",
     "ago": "{{timeAgo}} ago",
     "justNow": "Just now",
@@ -198,9 +198,9 @@
     "help": "Help",
     "documentation": {
       "title": "Documentation",
-      "label": "Frigate documentation"
+      "label": "Fusion Nvr documentation"
     },
-    "restart": "Restart Frigate",
+    "restart": "Restart Fusion Nvr",
     "live": {
       "title": "Live",
       "allCameras": "All Cameras",
@@ -238,7 +238,7 @@
     "title": "Role",
     "admin": "Admin",
     "viewer": "Viewer",
-    "desc": "Admins have full access to all features in the Frigate UI. Viewers are limited to viewing cameras, review items, and historical footage in the UI."
+    "desc": "Admins have full access to all features in the Fusion Nvr UI. Viewers are limited to viewing cameras, review items, and historical footage in the UI."
   },
   "pagination": {
     "label": "pagination",
@@ -253,12 +253,12 @@
     "more": "More pages"
   },
   "accessDenied": {
-    "documentTitle": "Access Denied - Frigate",
+    "documentTitle": "Access Denied - Fusion Nvr",
     "title": "Access Denied",
     "desc": "You don't have permission to view this page."
   },
   "notFound": {
-    "documentTitle": "Not Found - Frigate",
+    "documentTitle": "Not Found - Fusion Nvr",
     "title": "404",
     "desc": "Page not found"
   },

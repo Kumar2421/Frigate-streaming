@@ -1,13 +1,13 @@
 {
   "documentTitle": {
-    "cameras": "Cameras Stats - Frigate",
-    "storage": "Storage Stats - Frigate",
-    "general": "General Stats - Frigate",
-    "enrichments": "Enrichments Stats - Frigate",
+    "cameras": "Cameras Stats - Fusion Nvr",
+    "storage": "Storage Stats - Fusion Nvr",
+    "general": "General Stats - Fusion Nvr",
+    "enrichments": "Enrichments Stats - Fusion Nvr",
     "logs": {
-      "frigate": "Frigate Logs - Frigate",
-      "go2rtc": "Go2RTC Logs - Frigate",
-      "nginx": "Nginx Logs - Frigate"
+      "frigate": "Fusion Nvr Logs - Fusion Nvr",
+      "go2rtc": "Go2RTC Logs - Fusion Nvr",
+      "nginx": "Nginx Logs - Fusion Nvr"
     }
   },
   "title": "System",

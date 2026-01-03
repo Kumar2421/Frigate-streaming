@@ -31,6 +31,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.mypy_cache
 
 # Node.js
 node_modules/
@@ -74,6 +75,27 @@ Thumbs.db
 *.gif
 *.webp
 
+# Frigate specific
+*.db
+*.csv
+frigate/version.py
+web/build
+web/node_modules
+web/coverage
+core
+!/web/**/*.ts
+.ipynb_checkpoints
+
+# MQTT logs and data
+mqtt/log/
+mqtt/data/
+
+# Media files
+media/
+
+# Custom detector build files
+custom-detector/web-source/
+
 # Model cache (will be downloaded automatically)
 model_cache/
 config/model_cache/
@@ -114,17 +136,11 @@ coverage/
 # Dependency directories
 jspm_packages/
 
-# Optional npm cache directory
-.npm
-
 # Optional REPL history
 .node_repl_history
 
 # Output of 'npm pack'
 *.tgz
-
-# Yarn Integrity file
-.yarn-integrity
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import onnxruntime as ort
 from pydantic import Field
 from typing_extensions import Literal
 
@@ -22,6 +23,53 @@ logger = logging.getLogger(__name__)
 DETECTOR_KEY = "onnx"
 
 
+class CudaGraphRunner:
+    """Encapsulates CUDA Graph capture and replay using ONNX Runtime IOBinding.
+
+    This runner assumes a single tensor input and binds all model outputs.
+    """
+
+    def __init__(self, session: ort.InferenceSession, cuda_device_id: int):
+        self._session = session
+        self._cuda_device_id = cuda_device_id
+        self._captured = False
+        self._io_binding: ort.IOBinding | None = None
+        self._input_name: str | None = None
+        self._output_names: list[str] | None = None
+        self._input_ortvalue: ort.OrtValue | None = None
+        self._output_ortvalues: ort.OrtValue | None = None
+
+    def run(self, input_name: str, tensor_input: np.ndarray):
+        tensor_input = np.ascontiguousarray(tensor_input)
+
+        if not self._captured:
+            # Prepare IOBinding with CUDA buffers and let ORT allocate outputs on device
+            self._io_binding = self._session.io_binding()
+            self._input_name = input_name
+            self._output_names = [o.name for o in self._session.get_outputs()]
+
+            self._input_ortvalue = ort.OrtValue.ortvalue_from_numpy(
+                tensor_input, "cuda", self._cuda_device_id
+            )
+            self._io_binding.bind_ortvalue_input(self._input_name, self._input_ortvalue)
+
+            for name in self._output_names:
+                # Bind outputs to CUDA and allow ORT to allocate appropriately
+                self._io_binding.bind_output(name, "cuda", self._cuda_device_id)
+
+            # First IOBinding run to allocate, execute, and capture CUDA Graph
+            ro = ort.RunOptions()
+            self._session.run_with_iobinding(self._io_binding, ro)
+            self._captured = True
+            return self._io_binding.copy_outputs_to_cpu()
+
+        # Replay using updated input, copy results to CPU
+        self._input_ortvalue.update_inplace(tensor_input)
+        ro = ort.RunOptions()
+        self._session.run_with_iobinding(self._io_binding, ro)
+        return self._io_binding.copy_outputs_to_cpu()
+
+
 class ONNXDetectorConfig(BaseDetectorConfig):
     type: Literal[DETECTOR_KEY]
     device: str = Field(default="AUTO", title="Device Type")
@@ -33,6 +81,7 @@ class ONNXDetector(DetectionApi):
     def __init__(self, detector_config: ONNXDetectorConfig):
         super().__init__(detector_config)
 
+<<<<<<< HEAD
         try:
             import onnxruntime as ort
 
@@ -49,12 +98,23 @@ class ONNXDetector(DetectionApi):
         if not detector_config.model.path:
             raise ValueError(f"ONNX detector model path is not set. Please specify model.path in your detector config. Current model config: {detector_config.model}")
 
+=======
+>>>>>>> 57b37b071e96cef44350084eb8f496d9d3411833
         path = detector_config.model.path
         logger.info(f"ONNX: loading {detector_config.model.path}")
 
         providers, options = get_ort_providers(
             detector_config.device == "CPU", detector_config.device
         )
+
+        # Enable CUDA Graphs only for supported models when using CUDA EP
+        if "CUDAExecutionProvider" in providers:
+            cuda_idx = providers.index("CUDAExecutionProvider")
+            # mutate only this call's provider options
+            options[cuda_idx] = {
+                **options[cuda_idx],
+                "enable_cuda_graph": True,
+            }
 
         self.model = ort.InferenceSession(
             path, providers=providers, provider_options=options
@@ -67,6 +127,19 @@ class ONNXDetector(DetectionApi):
 
         if self.onnx_model_type == ModelTypeEnum.yolox:
             self.calculate_grids_strides()
+
+        self._cuda_device_id = 0
+        self._cg_runner: CudaGraphRunner | None = None
+
+        try:
+            if "CUDAExecutionProvider" in providers:
+                cuda_idx = providers.index("CUDAExecutionProvider")
+                self._cuda_device_id = options[cuda_idx].get("device_id", 0)
+
+                if options[cuda_idx].get("enable_cuda_graph"):
+                    self._cg_runner = CudaGraphRunner(self.model, self._cuda_device_id)
+        except Exception:
+            pass
 
         logger.info(f"ONNX: {path} loaded")
 
@@ -84,7 +157,17 @@ class ONNXDetector(DetectionApi):
             return post_process_dfine(tensor_output, self.width, self.height)
 
         model_input_name = self.model.get_inputs()[0].name
-        tensor_output = self.model.run(None, {model_input_name: tensor_input})
+
+        if self._cg_runner is not None:
+            try:
+                # Run using CUDA graphs if available
+                tensor_output = self._cg_runner.run(model_input_name, tensor_input)
+            except Exception:
+                logger.warning("CUDA Graphs failed, falling back to regular run")
+                self._cg_runner = None
+        else:
+            # Use regular run if CUDA graphs are not available
+            tensor_output = self.model.run(None, {model_input_name: tensor_input})
 
         if self.onnx_model_type == ModelTypeEnum.rfdetr:
             return post_process_rfdetr(tensor_output)

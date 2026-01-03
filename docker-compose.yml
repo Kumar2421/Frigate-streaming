@@ -62,5 +62,3 @@ volumes:
   frigate_model_cache: # Named volume for database (avoids SQLite I/O errors on Windows filesystems)
 
   frigate_db:
-
-

@@ -1,15 +1,15 @@
 {
   "documentTitle": {
-    "default": "Settings - Frigate",
-    "authentication": "Authentication Settings - Frigate",
-    "camera": "Camera Settings - Frigate",
-    "enrichments": "Enrichments Settings - Frigate",
-    "masksAndZones": "Mask and Zone Editor - Frigate",
-    "motionTuner": "Motion Tuner - Frigate",
-    "object": "Debug - Frigate",
-    "general": "General Settings - Frigate",
-    "frigatePlus": "Frigate+ Settings - Frigate",
-    "notifications": "Notification Settings - Frigate"
+    "default": "Settings - Fusion Nvr",
+    "authentication": "Authentication Settings - Fusion Nvr",
+    "camera": "Camera Settings - Fusion Nvr",
+    "enrichments": "Enrichments Settings - Fusion Nvr",
+    "masksAndZones": "Mask and Zone Editor - Fusion Nvr",
+    "motionTuner": "Motion Tuner - Fusion Nvr",
+    "object": "Debug - Fusion Nvr",
+    "general": "General Settings - Fusion Nvr",
+    "frigatePlus": "Frigate+ Settings - Fusion Nvr",
+    "notifications": "Notification Settings - Fusion Nvr"
   },
   "menu": {
     "ui": "UI",
@@ -280,7 +280,7 @@
     },
     "zones": {
       "label": "Zones",
-      "documentTitle": "Edit Zone - Frigate",
+      "documentTitle": "Edit Zone - Fusion Nvr",
       "desc": {
         "title": "Zones allow you to define a specific area of the frame so you can determine whether or not an object is within a particular area.",
         "documentation": "Documentation"
@@ -332,7 +332,7 @@
     },
     "motionMasks": {
       "label": "Motion Mask",
-      "documentTitle": "Edit Motion Mask - Frigate",
+      "documentTitle": "Edit Motion Mask - Fusion Nvr",
       "desc": {
         "title": "Motion masks are used to prevent unwanted types of motion from triggering detection. Over masking will make it more difficult for objects to be tracked.",
         "documentation": "Documentation"
@@ -358,7 +358,7 @@
     },
     "objectMasks": {
       "label": "Object Masks",
-      "documentTitle": "Edit Object Mask - Frigate",
+      "documentTitle": "Edit Object Mask - Fusion Nvr",
       "desc": {
         "title": "Object filter masks are used to filter out false positives for a given object type based on location.",
         "documentation": "Documentation"

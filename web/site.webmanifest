@@ -1,28 +1,28 @@
 {
-  "name": "Frigate",
-  "short_name": "Frigate",
-  "start_url": "/BASE_PATH/",
+  "name": "Fusion Nvr",
+  "short_name": "Fusion Nvr",
+  "start_url": "/",
   "icons": [
     {
-      "src": "/BASE_PATH/images/android-chrome-512x512.png",
+      "src": "/assets/logo-C8EGmsB0.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/BASE_PATH/images/android-chrome-192x192.png",
+      "src": "/assets/logo-C8EGmsB0.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/BASE_PATH/images/maskable-icon.png",
+      "src": "/assets/logo-C8EGmsB0.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/BASE_PATH/images/maskable-badge.png",
+      "src": "/assets/logo-C8EGmsB0.png",
       "sizes": "96x96",
       "type": "image/png",
       "purpose": "maskable"

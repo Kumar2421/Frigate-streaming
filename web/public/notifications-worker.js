@@ -22,9 +22,9 @@ self.addEventListener("push", function (event) {
     // @ts-expect-error we know this exists
     self.registration.showNotification(data.title, {
       body: data.message,
-      icon: "/images/maskable-icon.png",
+      icon: "/assets/logo-C8EGmsB0.png",
       image: data.image,
-      badge: "/images/maskable-badge.png",
+      badge: "/assets/logo-C8EGmsB0.png",
       tag: data.id,
       data: { id: data.id, link: data.direct_url },
       actions,

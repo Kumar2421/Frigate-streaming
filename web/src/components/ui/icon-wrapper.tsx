@@ -7,9 +7,9 @@ interface IconWrapperProps {
   [key: string]: any;
 }
 
-const IconWrapper = forwardRef(
+const IconWrapper = forwardRef<HTMLDivElement, IconWrapperProps>(
   (
-    { icon: Icon, className, ...props }: IconWrapperProps,
+    { icon: Icon, className, ...props },
     ref: ForwardedRef<HTMLDivElement>,
   ) => (
     <div {...props} ref={ref}>

@@ -9,7 +9,12 @@ import zmq
 logger = logging.getLogger(__name__)
 
 
-SOCKET_REP_REQ = "ipc:///tmp/cache/embeddings"
+import os
+# Windows doesn't support IPC sockets, use TCP instead
+if os.name == "nt":  # Windows
+    SOCKET_REP_REQ = "tcp://127.0.0.1:5556"
+else:
+    SOCKET_REP_REQ = "ipc:///tmp/cache/embeddings"
 
 
 class EmbeddingsRequestEnum(Enum):

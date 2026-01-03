@@ -1,42 +1,66 @@
 services:
-  devcontainer:
-    container_name: frigate-devcontainer
-    # Check host system's actual render/video/plugdev group IDs with 'getent group render', 'getent group video', and 'getent group plugdev'
-    # Must add these exact IDs in container's group_add section or OpenVINO GPU acceleration will fail
-    group_add:
-      - "109" # render
-      - "110" # render
-      - "44"  # video
-      - "46"  # plugdev
-    shm_size: "256mb"
-    build:
-      context: .
-      dockerfile: docker/main/Dockerfile
-      # Use target devcontainer-trt for TensorRT dev
-      target: devcontainer
-    ## Uncomment this block for nvidia gpu support
-    # deploy:
-    #       resources:
-    #           reservations:
-    #               devices:
-    #                   - driver: nvidia
-    #                     count: 1
-    #                     capabilities: [gpu]
-    environment:
-      YOLO_MODELS: ""
-    # devices:
-      # - /dev/bus/usb:/dev/bus/usb # Uncomment for Google Coral USB
-      # - /dev/dri:/dev/dri # for intel hwaccel, needs to be updated for your hardware
+  frigate:
+    container_name: frigate
+    restart: unless-stopped
+    stop_grace_period: 30s
+    image: ghcr.io/blakeblackshear/frigate:stable
+    # Use development image if you want to test your local changes
+    # build:
+    #   context: .
+    #   dockerfile: docker/main/Dockerfile
+
+    shm_size: '512mb' # Adjust based on your camera count and resolution
+
     volumes:
-      - .:/workspace/frigate:cached
-      - ./web/dist:/opt/frigate/web:cached
-      - /etc/localtime:/etc/localtime:ro
-      - ./config:/config
-      - ./debug:/media/frigate
-     # - /dev/bus/usb:/dev/bus/usb # Uncomment for Google Coral USB
-  mqtt:
-    container_name: mqtt
-    image: eclipse-mosquitto:2.0
-    command: mosquitto -c /mosquitto-no-auth.conf # enable no-auth mode
+      # Mount your config directory (rw for config migrations)
+      # Note: Database and model_cache use separate volumes to avoid Windows filesystem issues
+      - ./config:/config:rw
+      # Use named volume for database (avoids SQLite I/O errors on Windows filesystems)
+      - frigate_db:/db
+      # Mount storage for recordings, clips, etc.
+      - ./input:/media/frigate:rw
+      # Mount local web build to COMPLETELY override container's pre-built web files
+      # This ensures all old favicon files in /opt/frigate/web/assets/ are replaced
+      - ./web/dist:/opt/frigate/web:ro
+      # Use tmpfs for cache (eliminates Windows path issues)
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000 # 1GB cache in memory
+      # Use named volume for model_cache (writable, persists across restarts)
+      - frigate_model_cache:/config/model_cache
+
     ports:
-      - "1883:1883"
+      - "8971:8971" # Web UI (HTTPS)
+      - "5000:5000" # Internal API (HTTP, unauthenticated - use carefully)
+      - "5001:5001" # Internal API (HTTP, authenticated)
+      - "8554:8554" # RTSP feeds
+      - "8555:8555/tcp" # WebRTC over TCP
+      - "8555:8555/udp" # WebRTC over UDP
+
+    environment:
+      # Set timezone (adjust to your location)
+      - TZ=Asia/Kolkata
+      # RTSP password for go2rtc
+      - FRIGATE_RTSP_PASSWORD=password
+      # Optional: Set config directory
+      - FRIGATE_CONFIG_DIR=/config
+    # Optional: For hardware acceleration (if you have compatible GPU)
+    # devices:
+    #   - /dev/dri/renderD128  # Intel GPU
+    #   - /dev/dri/card0       # AMD GPU
+
+    # Optional: For USB Coral TPU
+    # devices:
+    #   - /dev/bus/usb:/dev/bus/usb
+
+    # Optional: Enable if you need privileged mode (for some hardware)
+    # privileged: true
+
+volumes:
+  # Named volume for model cache (writable, avoids Windows bind mount issues)
+  frigate_model_cache: # Named volume for database (avoids SQLite I/O errors on Windows filesystems)
+
+  frigate_db:
+
+

@@ -43,6 +43,12 @@ class ONNXDetector(DetectionApi):
             )
             raise
 
+        if not detector_config.model:
+            raise ValueError("ONNX detector requires a model configuration. Please specify model.path in your detector config.")
+        
+        if not detector_config.model.path:
+            raise ValueError(f"ONNX detector model path is not set. Please specify model.path in your detector config. Current model config: {detector_config.model}")
+
         path = detector_config.model.path
         logger.info(f"ONNX: loading {detector_config.model.path}")
 

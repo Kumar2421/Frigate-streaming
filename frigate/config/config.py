@@ -70,6 +70,8 @@ from .telemetry import TelemetryConfig
 from .tls import TlsConfig
 from .tracker_config import TrackerConfig
 from .ui import UIConfig
+from pydantic import BaseModel
+from typing import Literal
 
 __all__ = ["FrigateConfig"]
 
@@ -101,6 +103,11 @@ DEFAULT_DETECT_DIMENSIONS = {"width": 1280, "height": 720}
 # stream info handler
 stream_info_retriever = StreamInfoRetriever()
 
+# -------------- tracking -------------
+
+class TrackConfig(BaseModel):
+    type: Literal["default", "deepsort"] = "default"
+    reid_labels: bool = False  # new option to replace labels with ReID IDs
 
 class RuntimeMotionConfig(MotionConfig):
     raw_mask: Union[str, List[str]] = ""
@@ -323,7 +330,9 @@ class FrigateConfig(FrigateBaseModel):
         title="Logging configuration.",
         validate_default=True,
     )
-
+    # ----------- tracking -------------
+    track: TrackConfig = TrackConfig()
+    # ---------------    ---------------
     # Global config
     auth: AuthConfig = Field(default_factory=AuthConfig, title="Auth configuration.")
     database: DatabaseConfig = Field(
@@ -486,25 +495,83 @@ class FrigateConfig(FrigateBaseModel):
             )
             detector_config: BaseDetectorConfig = adapter.validate_python(model_dict)
 
-            # users should not set model themselves
+            # Get model config - prefer user-provided model config, then model_path, then global default
             if detector_config.model:
-                detector_config.model = None
-
-            model_config = self.model.model_dump(exclude_unset=True, warnings="none")
+                # User provided model config in detector section - use it
+                model_config = detector_config.model.model_dump(exclude_unset=True, warnings="none")
+                logger.debug(f"Using user-provided model config for {key}: {model_config.get('path', 'no path')}")
+            else:
+                # Use global model config as default
+                model_config = self.model.model_dump(exclude_unset=True, warnings="none")
+                logger.debug(f"Using global model config for {key}: {model_config.get('path', 'no path')}")
 
             if detector_config.model_path:
                 model_config["path"] = detector_config.model_path
+                logger.debug(f"Overriding model path with model_path for {key}: {detector_config.model_path}")
 
-            if "path" not in model_config:
+            if "path" not in model_config or not model_config.get("path"):
+                logger.warning(f"No model path found for detector {key}, using default")
+                # NEVER use TensorFlow models - only PyTorch/ONNX models
                 if detector_config.type == "cpu" or detector_config.type.endswith(
                     "_tfl"
                 ):
-                    model_config["path"] = "/cpu_model.tflite"
+                    # Windows-compatible default model path - use ONNX instead of TensorFlow
+                    if os.name == "nt":  # Windows
+                        # Use Plus model as default on Windows (ONNX-based, not TensorFlow)
+                        model_config["path"] = "plus://ssd-mobilenet-v2"
+                    else:
+                        # Linux: Try to use ONNX model, fallback to Plus if not available
+                        logger.warning("No default model specified. Please provide an ONNX model path.")
+                        model_config["path"] = "plus://ssd-mobilenet-v2"
                 elif detector_config.type == "edgetpu":
-                    model_config["path"] = "/edgetpu_model.tflite"
+                    # EdgeTPU uses TensorFlow Lite - but user wants to avoid this
+                    logger.error("EdgeTPU detector requires TensorFlow Lite models. Please use ONNX detector instead.")
+                    raise ValueError("EdgeTPU detector not supported. Use ONNX detector with PyTorch/ONNX models.")
 
             model = ModelConfig.model_validate(model_config)
+            logger.debug(f"Model path before Plus check for {key}: {model.path}")
             model.check_and_load_plus_model(self.plus_api, detector_config.type)
+            logger.debug(f"Model path after Plus check for {key}: {model.path}")
+            
+            # Only validate and fallback if model path is not a Plus model and doesn't exist
+            if model.path and not model.path.startswith("plus://"):
+                # Check if path exists (handle both absolute and relative paths)
+                model_path = model.path
+                if not os.path.isabs(model_path):
+                    # Try relative to config directory
+                    try:
+                        config_file = find_config_file()
+                        if config_file:
+                            config_dir = os.path.dirname(config_file)
+                            model_path = os.path.join(config_dir, model.path)
+                    except:
+                        pass
+                    # Also try relative to current working directory
+                    if not os.path.exists(model_path):
+                        model_path = os.path.join(os.getcwd(), model.path)
+                
+                if not os.path.exists(model_path):
+                    logger.warning(f"Model path '{model.path}' not found. Attempted: {model_path}")
+                    # NEVER fallback to TensorFlow models - only use PyTorch/ONNX models
+                    # Only fallback to Plus model (ONNX-based) if this is a CPU detector on Windows
+                    # DO NOT fallback for ONNX, OpenVINO, or other detector types
+                    if detector_config.type == "cpu" and os.name == "nt":
+                        logger.warning(f"Using Plus model (ONNX-based) as fallback for CPU detector on Windows.")
+                        model.path = "plus://ssd-mobilenet-v2"
+                        model.check_and_load_plus_model(self.plus_api, detector_config.type)
+                    elif detector_config.type.endswith("_tfl") or detector_config.type == "edgetpu":
+                        # Block TensorFlow Lite models
+                        logger.error(f"TensorFlow Lite models are not allowed. Please use ONNX models (exported from PyTorch .pt files).")
+                        raise ValueError(f"TensorFlow Lite models not supported. Use ONNX detector with .onnx models (exported from PyTorch .pt files).")
+                    else:
+                        # For other detector types (ONNX, OpenVINO), raise error instead of falling back
+                        logger.error(f"Model file not found: {model.path}. Please check the path.")
+                        raise FileNotFoundError(f"Model file not found: {model.path}. Attempted: {model_path}")
+                else:
+                    # Update model path to absolute path if relative path was found
+                    if not os.path.isabs(model.path):
+                        model.path = os.path.abspath(model_path)
+                        logger.debug(f"Resolved model path to: {model.path}")
             model.compute_model_hash()
             labelmap_objects = model.merged_labelmap.values()
             detector_config.model = model

@@ -8,8 +8,14 @@ import zmq
 
 from frigate.const import FAST_QUEUE_TIMEOUT
 
-SOCKET_PUB = "ipc:///tmp/cache/proxy_pub"
-SOCKET_SUB = "ipc:///tmp/cache/proxy_sub"
+import os
+# Windows doesn't support IPC sockets, use TCP instead
+if os.name == "nt":  # Windows
+    SOCKET_PUB = "tcp://127.0.0.1:5558"
+    SOCKET_SUB = "tcp://127.0.0.1:5559"
+else:
+    SOCKET_PUB = "ipc:///tmp/cache/proxy_pub"
+    SOCKET_SUB = "ipc:///tmp/cache/proxy_sub"
 
 
 class ZmqProxyRunner(threading.Thread):

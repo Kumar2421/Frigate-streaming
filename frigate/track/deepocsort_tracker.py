@@ -240,7 +240,7 @@ class DeepOCSORTTracker(ObjectTracker):
         }
         self.stationary_box_history[frigate_id] = [box]
         
-        logger.debug(f"Registered new object {frigate_id} with track_id {track_id}")
+        # Object registered successfully
     
     def deregister(self, frigate_id: str, track_id: str) -> None:
         """Deregister a tracked object."""
@@ -257,7 +257,7 @@ class DeepOCSORTTracker(ObjectTracker):
         if track_id in self.track_id_map:
             del self.track_id_map[track_id]
             
-        logger.debug(f"Deregistered object {frigate_id} with track_id {track_id}")
+        # Object deregistered successfully
     
     def update(self, track_id: str, obj: Dict[str, Any]) -> None:
         """Update an existing tracked object."""

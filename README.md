@@ -1,224 +1,325 @@
-# Frigate with DeepOCSORT Re-identification
+# Fusion Nvr
 
-This repository contains a custom implementation of Frigate with DeepOCSORT tracking and ReID-based person re-identification capabilities.
+A custom NVR (Network Video Recorder) solution based on Frigate, featuring object detection, tracking, and recording capabilities. This project includes custom branding, Docker deployment, and optimized configuration for production use.
 
 ## 🌟 Features
 
-- **DeepOCSORT Tracking**: Advanced multi-object tracking with improved accuracy
-- **ReID Re-identification**: Person re-identification using dedicated ReID models (OSNet, ResNet)
-- **Web Interface Integration**: View re-identification results in the Frigate web UI
-- **Configurable Parameters**: Fine-tune tracking and re-identification settings
-- **Real-time Processing**: Live tracking and re-identification during video processing
-- **Docker Support**: Complete Docker setup for easy deployment
+- **Object Detection**: YOLOv8-based detection with ONNX runtime
+- **Object Tracking**: Multi-object tracking with configurable methods
+- **Video Recording**: Automatic event-based recording with retention policies
+- **Web Interface**: Modern React-based web UI with custom branding
+- **Docker Deployment**: Easy deployment with Docker Compose
+- **Cross-Platform**: Works on Windows, Linux, and macOS
+- **Real-time Processing**: Live camera feeds and real-time detection
 
 ## 🚀 Quick Start
 
-### Docker Setup (Recommended)
+### Docker Deployment (Recommended)
 
-1. **Build the custom Docker image:**
-   ```bash
-   # Windows
-   build-deepocsort-docker.bat
-   
-   # Linux/macOS
-   chmod +x build-deepocsort-docker.sh
-   ./build-deepocsort-docker.sh
-   ```
+**Prerequisites:**
+- Docker Desktop installed and running
+- At least 4GB RAM available for Docker
 
-2. **Run with Docker Compose:**
-   ```bash
-   docker-compose -f docker-compose.deepocsort.yml up -d
-   ```
+**1. Start Docker Desktop** (if not already running)
 
-3. **Or run directly:**
-   ```bash
-   docker run --rm --publish=5000:5000 --volume="$(pwd)/config:/config" frigate-deepocsort:latest
-   ```
-
-### Manual Installation
-
-1. **Install dependencies:**
-   ```bash
-   # Windows
-   install_deepocsort.bat
-   
-   # Linux/macOS
-   chmod +x install_deepocsort.sh
-   ./install_deepocsort.sh
-   ```
-
-2. **Configure Frigate:**
-   - Update `config/config.yml` with your camera settings
-   - Enable DeepOCSORT tracker in the configuration
-
-3. **Start Frigate:**
-   ```bash
-   python -m frigate
-   ```
-
-## ⚙️ Configuration
-
-### Tracker Configuration
-
-```yaml
-tracker:
-  type: deepocsort
-  deepocsort:
-    # Basic tracking parameters
-    det_thresh: 0.3
-    max_age: 30
-    min_hits: 3
-    iou_threshold: 0.3
-    
-    # Re-identification parameters
-    reid_model_path: "osnet_x1_0"  # OSNet, ResNet models
-    reid_device: "cpu"             # cpu, cuda, cuda:0
-    reid_threshold: 0.7            # Similarity threshold
-    
-    # Feature toggles
-    embedding_off: false
-    cmc_off: false
-    aw_off: false
-    new_kf_off: false
+**2. Build the frontend:**
+```bash
+cd web
+npm install
+npm run build:local
+cd ..
 ```
 
-### Available ReID Models
+**3. Start Fusion Nvr:**
+```bash
+docker compose up -d
+```
 
-| Model | Speed | Accuracy | Use Case |
-|-------|-------|----------|----------|
-| `osnet_x0_5` | Fastest | Good | Real-time applications |
-| `osnet_x0_75` | Fast | Better | Balanced performance |
-| `osnet_x1_0` | Medium | Best | **Recommended** |
-| `resnet50` | Medium | Good | Fallback option |
-| `resnet101` | Slow | Excellent | Maximum accuracy |
+**4. Access the web interface:**
+- Open your browser and navigate to: `http://localhost:5001`
+- The web interface will show "Fusion Nvr" with custom branding
 
-## 🎯 Usage
+**5. Stop Fusion Nvr:**
+```bash
+docker compose down
+```
 
-### Web Interface
+### Python Environment Setup (Alternative)
 
-1. **Access Frigate**: Open http://localhost:5000
-2. **Configure Tracker**: Go to Settings → Tracker
-3. **View Re-identification**: Check event details for re-identification matches
+**For Python 3.11+ (Latest):**
+```bash
+setup-python-env.bat
+```
 
-### Re-identification Results
+**For Python 3.10 (Compatible):**
+```bash
+setup-python310-env.bat
+```
 
-The system provides:
-- **Track Matches**: Objects re-identified across different time periods
-- **Similarity Scores**: Confidence levels for each match
-- **Timestamps**: When re-identifications occurred
-- **Track IDs**: Unique identifiers for tracked objects
+**Run Fusion Nvr:**
+```bash
+# For Python 3.11+
+.\run-frigate-python.bat
+
+# For Python 3.10
+run-frigate-python310.bat
+```
+
+### Manual Setup
+
+**1. Create Virtual Environment:**
+```bash
+python -m venv venv
+venv\Scripts\activate.bat
+```
+
+**2. Install Dependencies:**
+```bash
+# Install PyTorch (CPU version)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# Install DeepOCSORT and tracking packages
+pip install git+https://github.com/GerardMaggiolino/Deep-OC-SORT.git
+pip install torchreid lap cython-bbox
+
+# Install Frigate requirements
+pip install -r requirements-python.txt
+```
+
+**3. Run Frigate:**
+```bash
+python -m frigate
+```
 
 ## 📁 Project Structure
 
 ```
 frigate/
-├── frigate/
-│   ├── track/
-│   │   └── deepocsort_tracker.py    # DeepOCSORT implementation
-│   └── config/
-│       └── tracker_config.py        # Tracker configuration
-├── web/
-│   ├── src/
-│   │   ├── components/
-│   │   │   └── overlay/detail/
-│   │   │       └── ReIdentificationPanel.tsx
-│   │   ├── views/settings/
-│   │   │   └── TrackerSettingsView.tsx
-│   │   └── types/
-│   │       ├── frigateConfig.ts
-│   │       └── ws.ts
-├── config/
-│   └── config.yml                   # Frigate configuration
-├── Dockerfile.deepocsort            # Custom Docker image
-├── docker-compose.deepocsort.yml    # Docker Compose setup
-├── requirements-deepocsort.txt      # Python dependencies
-├── install_deepocsort.*             # Installation scripts
-├── build-deepocsort-docker.*        # Docker build scripts
-└── DEEPOCSORT_README.md             # Detailed documentation
+├── frigate/                 # Main application code
+├── web/                     # React web interface (frontend)
+│   ├── src/                # React source code
+│   ├── dist/               # Built frontend (generated)
+│   └── images/             # Custom logo and images
+├── config/                 # Configuration files
+│   └── config.yml          # Main configuration file
+├── input/                  # Video input files
+├── docker-compose.yml       # Docker Compose configuration
+├── requirements-python.txt # Python dependencies
+├── setup-python-env.bat    # Python 3.11+ setup script
+├── setup-python310-env.bat # Python 3.10 setup script
+├── run-frigate-python.bat  # Run Fusion Nvr (Python 3.11+)
+└── run-frigate-python310.bat # Run Fusion Nvr (Python 3.10)
 ```
 
-## 🔧 Development
+## ⚙️ Configuration
 
-### Prerequisites
+### Basic Configuration
 
-- Python 3.8+
-- Node.js 16+
-- Docker (optional)
-- Git
+Edit `config/config.yml` to configure cameras, detection, and recording:
 
-### Setup Development Environment
+```yaml
+# MQTT (optional, disabled by default)
+mqtt:
+  enabled: false
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Kumar2421/Frigate-streaming.git
-   cd Frigate-streaming
+# Global model configuration
+model:
+  model_type: yolo-generic
+  width: 640
+  height: 640
+  input_tensor: nchw
+  input_dtype: float
+  input_pixel_format: bgr
+  path: "/config/yolo8n.onnx"  # Path to YOLOv8 ONNX model
+
+# Detectors
+detectors:
+  onnx:
+    type: onnx
+    device: AUTO  # AUTO, CPU, or GPU (if available)
+
+# Cameras
+cameras:
+  test_camera:
+    ffmpeg:
+      inputs:
+        - path: input/test_video.mp4
+          roles:
+            - detect
+            - record
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+    record:
+      enabled: true
+      events:
+        retain:
+          default: 30
+          mode: motion
+          objects:
+            person: 30
+    live:
+      height: 720
+      quality: 8
+
+# Object tracking
+track:
+  enabled: true
+  max_disappeared: 30
+  max_distance: 50
+```
+
+### Model Setup
+
+**YOLOv8 Model:**
+1. Export YOLOv8 to ONNX format:
+   ```python
+   from ultralytics import YOLO
+   model = YOLO("yolov8n.pt")
+   model.export(format="onnx", imgsz=[640, 640], opset=20, dynamic=True, dynamo=True)
    ```
+2. Place the exported `yolov8n.onnx` file in the `config/` directory
+3. Update the `model.path` in `config.yml` to point to the model file
 
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements-deepocsort.txt
-   ```
+### Docker Configuration
 
-3. **Install Node.js dependencies:**
-   ```bash
-   cd web
-   npm install
-   ```
+The `docker-compose.yml` file includes:
+- Volume mounts for config, recordings, and web interface
+- Named volumes for database and model cache (avoids Windows filesystem issues)
+- Port mappings for web UI (5001), API (5000), and RTSP (8554, 8555)
+- Environment variables for timezone and RTSP password
 
-4. **Build web interface:**
-   ```bash
-   npm run build
-   ```
+## 🔧 Requirements
 
-## 📊 Performance
+### Docker Deployment
+- **Docker Desktop**: Latest version
+- **RAM**: 4GB minimum, 8GB recommended for Docker
+- **Storage**: 10GB free space
+- **OS**: Windows 10/11, Linux, macOS
 
-### Typical Performance (CPU)
-- **Processing Speed**: 10-15 FPS
-- **Memory Usage**: 2-4 GB RAM
-- **Accuracy**: 85-95% re-identification accuracy
+### Python Deployment (Alternative)
+- **Python**: 3.10 or 3.11+ (3.11+ recommended)
+- **RAM**: 4GB minimum, 8GB recommended
+- **Storage**: 10GB free space
+- **OS**: Windows 10/11, Linux, macOS
 
-### Typical Performance (GPU)
-- **Processing Speed**: 25-30 FPS
-- **Memory Usage**: 4-8 GB VRAM
-- **Accuracy**: 90-98% re-identification accuracy
+### Python Packages (for Python deployment)
+- **PyTorch**: 2.1.0+ (CPU version)
+- **OpenCV**: 4.8.0+
+- **NumPy**: 1.24.0+
+- **ONNX Runtime**: 1.15.0+
+- **Frigate**: Latest version
 
-## 🐳 Docker Migration
+## 🐛 Troubleshooting
 
-See [DOCKER_MIGRATION_GUIDE.md](DOCKER_MIGRATION_GUIDE.md) for detailed instructions on:
-- Building custom Docker images
-- Moving projects between machines
-- Docker deployment strategies
+### Docker Issues
 
-## 📖 Documentation
+**1. Docker Desktop not running:**
+- Ensure Docker Desktop is started before running `docker compose up -d`
+- Check Docker Desktop status in system tray
 
-- [DEEPOCSORT_README.md](DEEPOCSORT_README.md) - Comprehensive setup and configuration guide
-- [DOCKER_MIGRATION_GUIDE.md](DOCKER_MIGRATION_GUIDE.md) - Docker deployment and migration guide
+**2. Port already in use:**
+- Change ports in `docker-compose.yml` if 5000, 5001, or 8554 are in use
+- Check for other services using these ports
+
+**3. Web interface shows old images:**
+- Rebuild the frontend: `cd web && npm run build:local && cd ..`
+- Restart Docker: `docker compose down && docker compose up -d`
+- Clear browser cache (Ctrl+Shift+R)
+
+**4. Database I/O errors:**
+- The Docker setup uses named volumes to avoid Windows filesystem issues
+- If issues persist, check Docker volume permissions
+
+**5. Model not found:**
+- Ensure `yolo8n.onnx` is in the `config/` directory
+- Check the `model.path` in `config.yml` matches the file location
+
+### Python Deployment Issues
+
+**1. Missing packages:**
+```bash
+pip install -r requirements-python.txt
+```
+
+**2. NumPy compatibility issues:**
+```bash
+pip install "numpy<2.0"
+```
+
+**3. ONNX Runtime installation:**
+```bash
+pip install onnxruntime>=1.15.0
+```
+
+**4. PyTorch installation fails:**
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+
+### Python Version Issues
+
+**For Python 3.10:**
+- Use `setup-python310-env.bat`
+- May need older package versions
+
+**For Python 3.11+:**
+- Use `setup-python-env.bat`
+- Full feature support
+
+## 📚 Documentation
+
+- **Frigate**: [Official Documentation](https://docs.frigate.video/)
+- **YOLOv8**: [Ultralytics Documentation](https://docs.ultralytics.com/)
+- **Docker**: [Docker Documentation](https://docs.docker.com/)
+- **ONNX Runtime**: [ONNX Runtime Documentation](https://onnxruntime.ai/docs/)
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## 📄 License
 
-This project follows the same license as the original Frigate project.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- [Frigate](https://github.com/blakeblackshear/frigate) - Excellent NVR platform
-- [DeepOCSORT](https://github.com/GerardMaggiolino/Deep-OC-SORT) - Advanced tracking algorithm
-- [torchreid](https://github.com/KaiyangZhou/deep-person-reid) - Re-identification models
+- **Frigate Team**: For the excellent NVR software foundation
+- **Ultralytics**: For YOLOv8 object detection models
+- **ONNX Runtime Team**: For the efficient inference engine
+- **React Community**: For the web framework
+- **Docker Team**: For containerization platform
 
 ## 📞 Support
 
-For issues and questions:
-1. Check the documentation
-2. Search existing GitHub issues
+If you encounter issues:
+
+1. Check the [Troubleshooting](#-troubleshooting) section
+2. Search existing [Issues](https://github.com/your-repo/issues)
 3. Create a new issue with detailed information
+4. Join the community discussions
 
 ---
 
-**Happy Tracking! 🎯**
+## 🎨 Customization
+
+### Changing the Logo
+
+1. Replace `web/images/logo.png` with your custom logo (recommended: 512x512px PNG)
+2. Rebuild the frontend: `cd web && npm run build:local && cd ..`
+3. Restart Docker: `docker compose down && docker compose up -d`
+
+### Changing the Application Name
+
+1. Update translation files in `web/public/locales/en/` (replace "Fusion Nvr" with your name)
+2. Update `web/site.webmanifest` with your application name
+3. Rebuild the frontend and restart Docker
+
+---
+
+**Happy Monitoring! 🎯**

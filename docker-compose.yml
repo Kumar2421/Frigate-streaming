@@ -1,52 +1,64 @@
 services:
   frigate:
     container_name: frigate
-    build:
-      context: ./custom-detector
-      dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "5000:5000"
-      - "8554:8554" # RTSP feeds
-      - "8555:8555" # WebRTC over tcp
-      - "8556:8556" # WebRTC over udp
-    environment:
-      FRIGATE_V4L2_DEVICE: /dev/dri/renderD128
-      DEEPSORT_ENABLED: "true"
-      DEEPSORT_MAX_AGE: "30"
-      DEEPSORT_N_INIT: "3"
-      DEEPSORT_MAX_IOU_DISTANCE: "0.7"
-      DEEPSORT_MAX_COSINE_DISTANCE: "0.2"
-      DEEPSORT_NN_BUDGET: "100"
-      USE_DEEPSORT: "true"
+    stop_grace_period: 30s
+    image: ghcr.io/blakeblackshear/frigate:stable
+    # Use development image if you want to test your local changes
+    # build:
+    #   context: .
+    #   dockerfile: docker/main/Dockerfile
+
+    shm_size: '512mb' # Adjust based on your camera count and resolution
+
     volumes:
-      - /mnt/additional-disk/frigate/config:/config
-      - /mnt/additional-disk/frigate/media:/media/frigate
+      # Mount your config directory (rw for config migrations)
+      # Note: Database and model_cache use separate volumes to avoid Windows filesystem issues
+      - ./config:/config:rw
+      # Use named volume for database (avoids SQLite I/O errors on Windows filesystems)
+      - frigate_db:/db
+      # Mount storage for recordings, clips, etc.
+      - ./input:/media/frigate:rw
+      # Mount local web build to COMPLETELY override container's pre-built web files
+      # This ensures all old favicon files in /opt/frigate/web/assets/ are replaced
+      - ./web/dist:/opt/frigate/web:ro
+      # Use tmpfs for cache (eliminates Windows path issues)
       - type: tmpfs
         target: /tmp/cache
         tmpfs:
-          size: 1000000000
-    devices:
-      - /dev/bus/usb:/dev/bus/usb # passes the USB Coral, needs to be modified for other versions
-      - /dev/dri/renderD128:/dev/dri/renderD128 # for intel hwaccel, needs to be updated for your hardware
-    shm_size: "64m"
-    privileged: true
-    networks:
-      - frigate
+          size: 1000000000 # 1GB cache in memory
+      # Use named volume for model_cache (writable, persists across restarts)
+      - frigate_model_cache:/config/model_cache
 
-  mqtt:
-    container_name: mqtt
-    image: eclipse-mosquitto:2.0
-    restart: unless-stopped
     ports:
-      - "1883:1883"
-    volumes:
-      - /mnt/additional-disk/frigate/mqtt/config:/mosquitto/config
-      - /mnt/additional-disk/frigate/mqtt/data:/mosquitto/data
-      - /mnt/additional-disk/frigate/mqtt/log:/mosquitto/log
-    networks:
-      - frigate
+      - "8971:8971" # Web UI (HTTPS)
+      - "5000:5000" # Internal API (HTTP, unauthenticated - use carefully)
+      - "5001:5001" # Internal API (HTTP, authenticated)
+      - "8554:8554" # RTSP feeds
+      - "8555:8555/tcp" # WebRTC over TCP
+      - "8555:8555/udp" # WebRTC over UDP
 
-networks:
-  frigate:
-    driver: bridge
+    environment:
+      # Set timezone (adjust to your location)
+      - TZ=Asia/Kolkata
+      # RTSP password for go2rtc
+      - FRIGATE_RTSP_PASSWORD=password
+      # Optional: Set config directory
+      - FRIGATE_CONFIG_DIR=/config
+    # Optional: For hardware acceleration (if you have compatible GPU)
+    # devices:
+    #   - /dev/dri/renderD128  # Intel GPU
+    #   - /dev/dri/card0       # AMD GPU
+
+    # Optional: For USB Coral TPU
+    # devices:
+    #   - /dev/bus/usb:/dev/bus/usb
+
+    # Optional: Enable if you need privileged mode (for some hardware)
+    # privileged: true
+
+volumes:
+  # Named volume for model cache (writable, avoids Windows bind mount issues)
+  frigate_model_cache: # Named volume for database (avoids SQLite I/O errors on Windows filesystems)
+
+  frigate_db:

@@ -167,7 +167,7 @@ export default function ObjectPathPlotter() {
         <div className="relative" style={{ aspectRatio }}>
           <img
             ref={imgRef}
-            src="/placeholder.svg"
+            src="/assets/logo-C8EGmsB0.png"
             alt={`Latest from ${selectedCamera}`}
             className="h-auto w-full"
           />

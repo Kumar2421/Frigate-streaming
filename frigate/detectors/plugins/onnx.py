@@ -81,6 +81,25 @@ class ONNXDetector(DetectionApi):
     def __init__(self, detector_config: ONNXDetectorConfig):
         super().__init__(detector_config)
 
+<<<<<<< HEAD
+        try:
+            import onnxruntime as ort
+
+            logger.info("ONNX: loaded onnxruntime module")
+        except ModuleNotFoundError:
+            logger.error(
+                "ONNX: module loading failed, need 'pip install onnxruntime'?!?"
+            )
+            raise
+
+        if not detector_config.model:
+            raise ValueError("ONNX detector requires a model configuration. Please specify model.path in your detector config.")
+        
+        if not detector_config.model.path:
+            raise ValueError(f"ONNX detector model path is not set. Please specify model.path in your detector config. Current model config: {detector_config.model}")
+
+=======
+>>>>>>> 57b37b071e96cef44350084eb8f496d9d3411833
         path = detector_config.model.path
         logger.info(f"ONNX: loading {detector_config.model.path}")
 

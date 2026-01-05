@@ -50,7 +50,9 @@ class FrigateProcess(BaseProcess):
         self.__log_queue = frigate.log.log_listener.queue
 
     def pre_run_setup(self, logConfig: LoggerConfig | None = None) -> None:
-        os.nice(self.priority)
+        # os.nice() is not available on Windows
+        if hasattr(os, 'nice'):
+            os.nice(self.priority)
         setproctitle(self.name)
         threading.current_thread().name = f"process:{self.name}"
         faulthandler.enable()

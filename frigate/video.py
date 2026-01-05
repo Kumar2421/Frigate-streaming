@@ -136,18 +136,22 @@ def capture_frames(
         frame_buffer = frame_manager.write(frame_name)
         try:
             frame_buffer[:] = ffmpeg_process.stdout.read(frame_size)
-        except Exception:
+        except Exception as e:
             # shutdown has been initiated
             if stop_event.is_set():
                 break
 
-            logger.error(f"{config.name}: Unable to read frames from ffmpeg process.")
-
+            # Reduce log verbosity - only log if process is actually dead
             if ffmpeg_process.poll() is not None:
                 logger.error(
                     f"{config.name}: ffmpeg process is not running. exiting capture thread..."
                 )
+                logger.debug(f"FFmpeg error details: {e}")
                 break
+            else:
+                # Process is still running, just a temporary read error
+                # This can happen during stream reconnection
+                logger.debug(f"{config.name}: Temporary frame read error (process still running): {e}")
 
             continue
 
@@ -996,6 +1000,7 @@ def process_frames(
                     obj["id"],
                     thickness=thickness,
                     color=color,
+                    reid_matches=obj.get("reid_matches"),
                 )
 
             for region in regions:

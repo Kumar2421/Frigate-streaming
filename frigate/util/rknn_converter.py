@@ -1,6 +1,5 @@
 """RKNN model conversion utility for Frigate."""
 
-import fcntl
 import logging
 import os
 import subprocess
@@ -8,6 +7,18 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+# Platform-specific imports for file locking
+if sys.platform == "win32":
+    try:
+        import msvcrt
+    except ImportError:
+        msvcrt = None
+else:
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
 
 logger = logging.getLogger(__name__)
 
@@ -261,30 +272,66 @@ def acquire_conversion_lock(lock_file_path: Path, timeout: int = 300) -> bool:
     try:
         lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         cleanup_stale_lock(lock_file_path)
-        lock_fd = os.open(lock_file_path, os.O_CREAT | os.O_RDWR)
-
-        # Try to acquire exclusive lock
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                # Lock acquired successfully
-                logger.debug(f"Acquired conversion lock: {lock_file_path}")
-                return True
-            except (OSError, IOError):
-                # Lock is held by another process, wait and retry
-                if time.time() - start_time >= timeout:
-                    logger.warning(
-                        f"Timeout waiting for conversion lock: {lock_file_path}"
-                    )
-                    os.close(lock_fd)
-                    return False
-
-                logger.debug("Waiting for conversion lock to be released...")
-                time.sleep(1)
-
-        os.close(lock_fd)
-        return False
+        
+        if sys.platform == "win32":
+            # Windows file locking using msvcrt
+            if msvcrt is None:
+                logger.error("msvcrt module not available on Windows")
+                return False
+            
+            lock_fd = os.open(str(lock_file_path), os.O_CREAT | os.O_RDWR | os.O_TRUNC)
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    # Try to lock the file (exclusive lock)
+                    msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
+                    # Lock acquired successfully
+                    logger.debug(f"Acquired conversion lock: {lock_file_path}")
+                    return True
+                except IOError:
+                    # Lock is held by another process, wait and retry
+                    if time.time() - start_time >= timeout:
+                        logger.warning(
+                            f"Timeout waiting for conversion lock: {lock_file_path}"
+                        )
+                        os.close(lock_fd)
+                        return False
+                    
+                    logger.debug("Waiting for conversion lock to be released...")
+                    time.sleep(1)
+            
+            os.close(lock_fd)
+            return False
+        else:
+            # Unix file locking using fcntl
+            if fcntl is None:
+                logger.error("fcntl module not available on Unix system")
+                return False
+            
+            lock_fd = os.open(str(lock_file_path), os.O_CREAT | os.O_RDWR)
+            
+            # Try to acquire exclusive lock
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    # Lock acquired successfully
+                    logger.debug(f"Acquired conversion lock: {lock_file_path}")
+                    return True
+                except (OSError, IOError):
+                    # Lock is held by another process, wait and retry
+                    if time.time() - start_time >= timeout:
+                        logger.warning(
+                            f"Timeout waiting for conversion lock: {lock_file_path}"
+                        )
+                        os.close(lock_fd)
+                        return False
+                    
+                    logger.debug("Waiting for conversion lock to be released...")
+                    time.sleep(1)
+            
+            os.close(lock_fd)
+            return False
 
     except Exception as e:
         logger.error(f"Error acquiring conversion lock: {e}")
@@ -300,6 +347,18 @@ def release_conversion_lock(lock_file_path: Path) -> None:
     """
     try:
         if lock_file_path.exists():
+            # On Windows, we need to close the file handle first
+            # The lock is automatically released when the file is closed
+            # On Unix, we can just unlink the file
+            if sys.platform == "win32":
+                # Try to open and close the file to release the lock
+                try:
+                    fd = os.open(str(lock_file_path), os.O_RDWR)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    os.close(fd)
+                except (OSError, IOError):
+                    pass  # File might already be unlocked
+            
             lock_file_path.unlink()
             logger.debug(f"Released conversion lock: {lock_file_path}")
     except Exception as e:

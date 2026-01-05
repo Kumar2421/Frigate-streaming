@@ -1,94 +1,53 @@
-mqtt:
-  enabled: true
-  host: broker.emqx.io
-  port: 1883
+# ============================================
+# BASIC FRIGATE CONFIGURATION
+# Advanced AI features (Gemini, DeepOCSORT, Whisper) are DISABLED
+# Only core Frigate features are enabled:
+# - Object Detection & Tracking (Norfair)
+# - Recording & Snapshots
+# - Motion Detection
+# - Camera Monitoring
+# ============================================
 
-# Optional: logger verbosity settings
+# Database configuration (use Docker volume to avoid Windows filesystem issues)
+database:
+  path: /db/frigate.db
+
+# Global Model Configuration
+# This model config will be used by all detectors unless overridden
+model:
+  model_type: yolo-generic  # YOLO generic type supports YOLO 8
+  width: 640  # YOLO 8 default input size (adjust based on your model)
+  height: 640  # YOLO 8 default input size (adjust based on your model)
+  input_tensor: nchw  # NCHW format for YOLO models
+  input_dtype: float  # Float32 input
+  input_pixel_format: bgr  # BGR color format
+  path: "/config/yolo8n.onnx"  # Absolute path to YOLO 8 ONNX model in Docker container
+  # labelmap_path is optional - Frigate will use default if not specified
+
+# MQTT - DISABLED (optional, enable if you need MQTT integration)
+mqtt:
+  enabled: false
+  # host: broker.emqx.io
+  # port: 1883
+
+# Logger configuration to reduce debug output
 logger:
-  # Optional: Default log verbosity (default: shown below)
-  default: debug
-  # Optional: Component specific logger overrides
+  default: warning
   logs:
-    frigate.event: debug
-    frigate.mqtt: debug
+    frigate.track: error
+    frigate.camera.state: error
+    frigate.embeddings: error
+    frigate.comms: error
+    frigate.events: error
+    frigate.track.tracked_object: error
+    frigate.track.object_processing: error
+    frigate.track.deepocsort_tracker: error
+
+# Note: DeepOCSORT tracking is not available in the stable Frigate version
+# Using default Norfair tracking instead
 
 cameras:
-  license-plate-entry: # <------ Name the camera
-    enabled: true
-    ffmpeg:
-      inputs:
-        - path: /media/frigate/cars.mp4 # <----- Use Frigate's sample video with cars
-          input_args: -re -stream_loop -1 -fflags +genpts
-          roles:
-            - detect
-        # Alternative: Use video file for testing
-        # - path: /media/frigate/car-video.mp4
-        #   input_args: -re -stream_loop -1 -fflags +genpts
-        #   roles:
-        #     - detect
-        #     - record
-        # 
-        # Or use Frigate's sample video:
-        # - path: /media/frigate/car-stopping.mp4
-        #   input_args: -re -stream_loop -1 -fflags +genpts
-        #   roles:
-        #     - detect
-    detect:
-      enabled: true # <---- enable detection for LPR
-      width: 1280
-      height: 720
-      
-    objects:
-      track:
-        - car
-        - motorcycle
-        - truck
-        - bus
-        
-      filters:
-        car:
-          min_area: 1000
-          max_area: 200000
-          min_score: 0.1
-          threshold: 0.2
-        motorcycle:
-          min_area: 500
-          max_area: 100000
-          min_score: 0.1
-          threshold: 0.2
-        truck:
-          min_area: 2000
-          max_area: 300000
-          min_score: 0.1
-          threshold: 0.2
-        bus:
-          min_area: 3000
-          max_area: 500000
-          min_score: 0.1
-          threshold: 0.2
-        # person:
-        #   min_area: 500
-        #   max_area: 200000
-        #   min_score: 0.1
-        #   threshold: 0.2
-    lpr:
-      enabled: true
-    zones:
-      License-Plate-Capture:
-        coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-        inertia: 1
-        loitering_time: 0
-        objects: 
-          - car
-          - motorcycle
-          - truck
-          - bus
-    motion:
-      threshold: 50
-      contour_area: 10
-      improve_contrast: true
-      # --------------------------------------------------
-      
+
   em-dept-exit: # <------ Name the camera
     enabled: true
     ffmpeg:
@@ -340,58 +299,38 @@ record:
   retain:
     days: 7
     mode: motion
-  alerts:
-    retain:
-      days: 30
-  detections:
-    retain:
-      days: 30
 snapshots:
   enabled: true
   retain:
     default: 30
-version: 0.16-0
+version: 0.17-0
 camera_groups:
   Emerald:
     order: 1
     icon: LuActivity
     cameras:
-      - emer-exit
-      - emer-entry
+      - em-dept-exit
+      - em-dept-entry
+# Semantic Search - DISABLED (Basic Frigate only)
 semantic_search:
-  enabled: true
-  reindex: false
-  model_size: small
+  enabled: false
+
+# Detectors Configuration
+# Using ONNX detector with YOLO 8 model
+# YOLO 8 provides better accuracy than CPU detector
+# Model config is in global 'model:' section above
+detectors:
+  onnx:
+    type: onnx
+    device: AUTO  # AUTO, CPU, or GPU (if available)
+    # Model config will be inherited from global model: section
+
+# FFmpeg Configuration
+# In Docker, FFmpeg is pre-installed - no path configuration needed
+# For native Windows, uncomment and set path:
+# ffmpeg:
+#   path: "ffmpeg"  # or full path like "C:/ffmpeg/bin/ffmpeg"
+
+# Basic Detection - ENABLED
 detect:
   enabled: true
-
-# Global Detector Configuration
-detectors:
-  cpu1:
-    type: cpu
-
-# Global LPR Configuration
-lpr:
-  enabled: true
-
-# Global Tracker Configuration
-tracker:
-  type: deepocsort
-  deepocsort:
-    det_thresh: 0.3
-    max_age: 30
-    min_hits: 3
-    iou_threshold: 0.3
-    delta_t: 3
-    asso_func: "giou"
-    inertia: 0.2
-    w_association_emb: 0.75
-    alpha_fixed_emb: 0.95
-    aw_param: 0.5
-    embedding_off: false
-    cmc_off: false
-    aw_off: false
-    new_kf_off: false
-    reid_model_path: "osnet_x1_0"
-    reid_device: "cpu"
-    reid_threshold: 0.7

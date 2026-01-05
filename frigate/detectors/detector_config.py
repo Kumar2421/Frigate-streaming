@@ -103,8 +103,11 @@ class ModelConfig(BaseModel):
     def __init__(self, **config):
         super().__init__(**config)
 
+        import os
+        # Windows-compatible default labelmap path
+        default_labelmap = os.path.join(os.getcwd(), "labelmap.txt") if os.name == "nt" else "/labelmap.txt"
         self._merged_labelmap = {
-            **load_labels(config.get("labelmap_path", "/labelmap.txt")),
+            **load_labels(config.get("labelmap_path", default_labelmap)),
             **config.get("labelmap", {}),
         }
         self._colormap = {}

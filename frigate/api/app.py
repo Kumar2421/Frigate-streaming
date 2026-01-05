@@ -58,7 +58,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=[Tags.app])
 
 
-@router.get("/", response_class=PlainTextResponse)
+# Root route is handled by fastapi_app.py to serve the web frontend
+# This endpoint is kept for API health checks at /api/health if needed
+@router.get("/health", response_class=PlainTextResponse)
 def is_healthy():
     return "Frigate is running. Alive and healthy!"
 

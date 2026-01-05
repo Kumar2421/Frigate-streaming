@@ -298,9 +298,15 @@ class BirdsEyeFrameManager:
             birdseye_logo = cv2.imread(custom_logo_files[0], cv2.IMREAD_UNCHANGED)
 
         if birdseye_logo is None:
+            # Try logo.png first, then fallback to birdseye.png for compatibility
             logo_files = glob.glob(
                 os.path.join(INSTALL_DIR, "frigate/images/logo.png")
             )
+            
+            if len(logo_files) == 0:
+                logo_files = glob.glob(
+                    os.path.join(INSTALL_DIR, "frigate/images/birdseye.png")
+                )
 
             if len(logo_files) > 0:
                 birdseye_logo = cv2.imread(logo_files[0], cv2.IMREAD_UNCHANGED)

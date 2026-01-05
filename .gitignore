@@ -8,6 +8,7 @@ config/frigate.db*
 config/frigate.db-shm
 config/frigate.db-wal
 config/backup.db
+cache/  # ZeroMQ IPC sockets and cache files
 
 # Python
 __pycache__/
@@ -97,7 +98,18 @@ custom-detector/web-source/
 
 # Model cache (will be downloaded automatically)
 model_cache/
-
+config/model_cache/
+config/frigate.db*
+config/frigate.db-shm
+config/frigate.db-wal
+config/backup.db
+config/yolo8n.onnx
+config/yolo8n.pt
+config/yolo12n.onnx
+config/yolo12s.pt
+config/yolo12m.pt
+config/yolo12l.pt
+config/yolo12x.pt
 # Environment variables
 .env
 .env.local
@@ -154,3 +166,22 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+# Documentation files
+DOCKER_SETUP.md
+MODEL_PERFORMANCE_GUIDE.md
+WINDOWS_BUILD_TOOLS.md
+YOLO12_SETUP.md
+check-docker.ps1
+
+# Model files
+config/yolov12s.pt
+config/yolov8n.onnx
+exportonx.py
+onnxconvert.py
+
+# Log files
+frigate_final_logs.txt
+frigate_logs.txt
+
+# Postgres data (should never be in git)
+postgres/data/

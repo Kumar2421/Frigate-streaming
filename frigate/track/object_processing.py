@@ -13,6 +13,8 @@ from frigate.track.deepocsort_tracker import DeepOCSORTTracker
 
 import cv2
 import numpy as np
+import os
+import uuid
 from peewee import SQL, DoesNotExist
 
 from frigate.camera.state import CameraState
@@ -30,10 +32,20 @@ from frigate.config import (
     RecordConfig,
     SnapshotsConfig,
 )
-from frigate.config.camera.updater import (
-    CameraConfigUpdateEnum,
-    CameraConfigUpdateSubscriber,
-)
+try:
+    from frigate.config.camera.updater import (
+        CameraConfigUpdateEnum,
+        CameraConfigUpdateSubscriber,
+    )
+except Exception:  # noqa: BLE001
+    CameraConfigUpdateEnum = Enum("CameraConfigUpdateEnum", "add enabled remove zones")
+
+    class CameraConfigUpdateSubscriber:  # type: ignore[no-redef]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.camera_configs = {}
+
+        def check_for_updates(self) -> dict[str, list[str]]:
+            return {}
 from frigate.const import (
     FAST_QUEUE_TIMEOUT,
     UPDATE_CAMERA_ACTIVITY,
@@ -72,6 +84,47 @@ class TrackedObjectProcessor(threading.Thread):
         self.frame_manager = SharedMemoryFrameManager()
         self.last_motion_detected: dict[str, float] = {}
         self.ptz_autotracker_thread = ptz_autotracker_thread
+        # Directory to save YOLO annotated frames (optional)
+        self._yolo_save_dir = os.environ.get("YOLO_SAVE_DIR", "/media/frigate/yolo")
+        try:
+            os.makedirs(self._yolo_save_dir, exist_ok=True)
+        except Exception:
+            # Fallback to /tmp if media is not writable
+            self._yolo_save_dir = "/tmp/Ultralytics"
+            os.makedirs(self._yolo_save_dir, exist_ok=True)
+        # Testing flags to bypass person gating
+        self._fire_always_run = os.environ.get("FIRE_ALWAYS_RUN", "0") in ("1", "true", "True")
+        self._face_always_run = os.environ.get("FACE_ALWAYS_RUN", "0") in ("1", "true", "True")
+        # Optional overlay for clips
+        self._draw_clip_overlays = os.environ.get("DRAW_CLIP_OVERLAYS", "0") in ("1", "true", "True")
+        self._clips_output_dir = os.environ.get("CLIPS_OUTPUT_DIR", "/media/frigate/clips")
+        try:
+            os.makedirs(self._clips_output_dir, exist_ok=True)
+        except Exception:
+            pass
+        # Optional fire detector configuration via environment
+        self._fire_model = None
+        self._fire_threshold = float(os.environ.get("FIRE_THRESHOLD", "0.5"))
+        fire_model_path = os.environ.get("FIRE_MODEL_PATH")
+        if fire_model_path and os.path.exists(fire_model_path):
+            try:
+                from ultralytics import YOLO  # type: ignore
+                self._fire_model = YOLO(fire_model_path)
+                logger.info(f"Fire model loaded: {fire_model_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load fire model at {fire_model_path}: {e}")
+
+        # Optional face detector configuration via environment
+        self._face_model = None
+        self._face_threshold = float(os.environ.get("FACE_THRESHOLD", "0.5"))
+        face_model_path = os.environ.get("FACE_MODEL_PATH")
+        if face_model_path and os.path.exists(face_model_path):
+            try:
+                from ultralytics import YOLO  # type: ignore
+                self._face_model = YOLO(face_model_path)
+                logger.info(f"Face model loaded: {face_model_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load face model at {face_model_path}: {e}")
 
         self.camera_config_subscriber = CameraConfigUpdateSubscriber(
             self.config,
@@ -85,7 +138,7 @@ class TrackedObjectProcessor(threading.Thread):
         )
 
         self.requestor = InterProcessRequestor()
-        self.detection_publisher = DetectionPublisher(DetectionTypeEnum.all.value)
+        self.detection_publisher = DetectionPublisher(DetectionTypeEnum.all)
         self.event_sender = EventUpdatePublisher()
         self.event_end_subscriber = EventEndSubscriber()
         self.sub_label_subscriber = EventMetadataSubscriber(EventMetadataTypeEnum.all)
@@ -111,11 +164,15 @@ class TrackedObjectProcessor(threading.Thread):
         for camera in self.config.cameras.keys():
             self.create_camera_state(camera)
 
-                # Initialize DeepOCSORT tracker (only if enabled in config)
-        if self.config.track.type == "deepocsort":
-            self.deep_tracker = DeepOCSORTTracker(self.config.camera, self.ptz_metrics)
-        else:
-            self.deep_tracker = None
+        # Initialize DeepOCSORT tracker safely (only if enabled and available)
+        self.deep_tracker = None
+        try:
+            track_cfg = getattr(self.config, "track", None)
+            if getattr(track_cfg, "type", None) == "deepocsort":
+                detect_cfg = getattr(self.config, "detect", self.config)
+                self.deep_tracker = DeepOCSORTTracker(detect_cfg)
+        except Exception as e:
+            logger.debug(f"Deep tracker disabled: {e}")
 
     def create_camera_state(self, camera: str) -> None:
         """Creates a new camera state."""
@@ -757,19 +814,205 @@ class TrackedObjectProcessor(threading.Thread):
 
             self.update_mqtt_motion(camera, frame_time, motion_boxes)
 
+            
+
+            # Secondary face detection on frames containing a person (optional)
+            try:
+                if self._face_model and current_tracked_objects is not None:
+                    has_person = any(
+                        (getattr(o, "label", None) == "person") or
+                        (isinstance(o, dict) and o.get("label") == "person") or
+                        (hasattr(o, "obj_data") and isinstance(getattr(o, "obj_data"), dict) and o.obj_data.get("label") == "person")
+                        for o in current_tracked_objects
+                    )
+                    if has_person or self._face_always_run:
+                        logger.info(
+                            f"Face inference: camera={camera}, has_person={has_person}, always_run={self._face_always_run}"
+                        )
+                        frame = self.get_current_frame(camera)
+                        if frame is None:
+                            logger.info(f"Face detection skipped: no frame available for camera {camera}")
+                            # clear any pending face dets for tracker if we have no frame
+                            self._pending_face_detections = []
+                        else:
+                            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            results = self._face_model.predict(
+                                img_rgb,
+                                verbose=False,
+                                save=False,
+                            )
+                            # Normalize face detections for DeepSORT (xyxy format per object)
+                            face_norm_dets = []
+                            try:
+                                for r in results:
+                                    names = getattr(r, "names", {}) or {}
+                                    boxes = getattr(r, "boxes", None)
+                                    if boxes is None:
+                                        continue
+                                    for b in boxes:
+                                        try:
+                                            # coords
+                                            if hasattr(b, "xyxy"):
+                                                arr = b.xyxy[0].tolist()
+                                                x1, y1, x2, y2 = [int(v) for v in arr[:4]]
+                                            elif hasattr(b, "xywh"):
+                                                arr = b.xywh[0].tolist()
+                                                cx, cy, w, h = arr[:4]
+                                                x1, y1 = int(cx - w / 2), int(cy - h / 2)
+                                                x2, y2 = int(cx + w / 2), int(cy + h / 2)
+                                            else:
+                                                continue
+                                            # class/conf
+                                            cls_id = int(b.cls.item()) if hasattr(b.cls, "item") else int(b.cls)
+                                            conf = float(b.conf.item()) if hasattr(b.conf, "item") else float(b.conf)
+                                            label = names.get(cls_id, "face")
+                                            face_norm_dets.append({
+                                                "label": label,
+                                                "score": conf,
+                                                "x1": x1,
+                                                "y1": y1,
+                                                "x2": x2,
+                                                "y2": y2,
+                                            })
+                                        except Exception:
+                                            continue
+                            except Exception:
+                                face_norm_dets = []
+                            # store for merging into DeepSORT tracker update
+                            self._pending_face_detections = face_norm_dets
+                            face_score = 0.0
+                            for r in results:
+                                names = getattr(r, "names", {}) or {}
+                                boxes = getattr(r, "boxes", None)
+                                if boxes is None:
+                                    continue
+                                for b in boxes:
+                                    try:
+                                        cls_id = int(b.cls.item()) if hasattr(b.cls, "item") else int(b.cls)
+                                        conf = float(b.conf.item()) if hasattr(b.conf, "item") else float(b.conf)
+                                    except Exception:
+                                        continue
+                                    label = names.get(cls_id, str(cls_id))
+                                    # common face models label faces as 'face', otherwise accept class id 0
+                                    if label == "face" or cls_id == 0:
+                                        if conf > face_score:
+                                            face_score = conf
+                            if face_score >= self._face_threshold:
+                                event_id = uuid.uuid4().hex
+                                include_recording = True
+                                sub_label = None
+                                duration = None
+                                source_type = "api"
+                                draw = {}
+                                self.create_manual_event(
+                                    (
+                                        frame_time,
+                                        camera,
+                                        "face",
+                                        event_id,
+                                        include_recording,
+                                        face_score,
+                                        sub_label,
+                                        duration,
+                                        source_type,
+                                        draw,
+                                    )
+                                )
+            except Exception as e:
+                logger.debug(f"Face detection step skipped due to error: {e}")
+
             # -------------- tracking --------------
             if self.deep_tracker:
     # Feed detections into DeepOCSORT
+                # Merge detections from primary (person) and face model (if any) for tracking
+                detections_for_tracker = current_tracked_objects if current_tracked_objects else []
+                if isinstance(detections_for_tracker, tuple):
+                    detections_for_tracker = list(detections_for_tracker)
+                face_extra = getattr(self, "_pending_face_detections", None)
+                if face_extra:
+                    try:
+                        detections_for_tracker = list(detections_for_tracker) + list(face_extra)
+                    except Exception:
+                        pass
                 self.deep_tracker.match_and_update(
                     frame_name=frame_name,
                     frame_time=frame_time,
-                    detections=current_tracked_objects
+                    detections=detections_for_tracker
                 )
                 tracked_objects = list(self.deep_tracker.get_tracked_objects().values())
             else:
                 tracked_objects = [
                     o.to_dict() for o in camera_state.tracked_objects.values()
                 ]
+
+            if self._draw_clip_overlays:
+                frame = self.get_current_frame(camera)
+                if frame is not None and tracked_objects is not None:
+                    try:
+                        annotated = frame.copy()
+                        for obj in tracked_objects:
+                            tid = obj.get("id") or obj.get("track_id") or obj.get("tracking_id")
+                            # Try multiple bbox formats
+                            x1 = y1 = x2 = y2 = None
+                            if isinstance(obj.get("box"), (list, tuple)) and len(obj["box"]) == 4:
+                                x1, y1, x2, y2 = obj["box"]
+                            elif isinstance(obj.get("bbox"), dict):
+                                bx = obj["bbox"]
+                                if all(k in bx for k in ("x", "y", "w", "h")):
+                                    x1, y1 = int(bx["x"]), int(bx["y"])
+                                    x2, y2 = int(bx["x"] + bx["w"]), int(bx["y"] + bx["h"])
+                            elif all(k in obj for k in ("x1", "y1", "x2", "y2")):
+                                x1, y1, x2, y2 = obj["x1"], obj["y1"], obj["x2"], obj["y2"]
+
+                            if None not in (x1, y1, x2, y2):
+                                x1, y1, x2, y2 = map(int, (x1, y1, x2, y2))
+                                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                # Show only seconds component of frame_time and track id
+                                try:
+                                    import time as _time
+                                    sec = _time.strftime('%S', _time.localtime(frame_time))
+                                except Exception:
+                                    sec = f"{int(frame_time)%60:02d}"
+                                text = f"{sec}s  #{tid}" if tid is not None else f"{sec}s"
+                                org = (x1, max(12, y1 - 8))
+                                font = cv2.FONT_HERSHEY_SIMPLEX
+                                font_scale = 0.7
+                                thickness = 2
+                                color_blue_dark = (180, 0, 0)  # BGR: dark-ish blue
+                                # Draw black outline for visibility
+                                cv2.putText(annotated, text, org, font, font_scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
+                                # Draw main dark blue text
+                                cv2.putText(annotated, text, org, font, font_scale, color_blue_dark, thickness, cv2.LINE_AA)
+                        # Also draw face detections to ensure face-only frames are annotated
+                        face_extra = getattr(self, "_pending_face_detections", None)
+                        if face_extra:
+                            try:
+                                for fobj in face_extra:
+                                    fx1 = fobj.get("x1"); fy1 = fobj.get("y1"); fx2 = fobj.get("x2"); fy2 = fobj.get("y2")
+                                    if None in (fx1, fy1, fx2, fy2):
+                                        continue
+                                    fx1, fy1, fx2, fy2 = map(int, (fx1, fy1, fx2, fy2))
+                                    cv2.rectangle(annotated, (fx1, fy1), (fx2, fy2), (0, 255, 255), 2)  # yellow box
+                                    # seconds text only (track id association optional)
+                                    try:
+                                        import time as _time
+                                        sec = _time.strftime('%S', _time.localtime(frame_time))
+                                    except Exception:
+                                        sec = f"{int(frame_time)%60:02d}"
+                                    ftext = f"{sec}s"
+                                    forg = (fx1, max(12, fy1 - 8))
+                                    cv2.putText(annotated, ftext, forg, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
+                                    cv2.putText(annotated, ftext, forg, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 140, 255), 2, cv2.LINE_AA)
+                            except Exception:
+                                pass
+                        out_name = f"{camera}-{frame_time:.6f}-annotated.jpg"
+                        out_path = os.path.join(self._clips_output_dir, out_name)
+                        try:
+                            cv2.imwrite(out_path, annotated)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
 
 
             # publish info on this frame

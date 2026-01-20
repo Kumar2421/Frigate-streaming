@@ -18,9 +18,9 @@
     "aria": "Select events",
     "noFoundForTimePeriod": "No events found for this time period."
   },
-  "documentTitle": "Review - Fusion Nvr",
+  "documentTitle": "Review - Fusion NVR",
   "recordings": {
-    "documentTitle": "Recordings - Fusion Nvr"
+    "documentTitle": "Recordings - Fusion NVR"
   },
   "calendarFilter": {
     "last24Hours": "Last 24 Hours"

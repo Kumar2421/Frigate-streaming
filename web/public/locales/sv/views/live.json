@@ -1,6 +1,6 @@
 {
-  "documentTitle": "Live - Frigate",
-  "documentTitle.withCamera": "{{camera}} - Live - Frigate",
+  "documentTitle": "Live - Fusion NVR",
+  "documentTitle.withCamera": "{{camera}} - Live - Fusion NVR",
   "twoWayTalk": {
     "enable": "Aktivera tvåvägssamtal",
     "disable": "Avaktivera tvåvägssamtal"

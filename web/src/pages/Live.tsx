@@ -77,6 +77,7 @@ function Live() {
     } else {
       document.title = t("documentTitle", { ns: "views/live" });
     }
+    
   }, [cameraGroup, selectedCameraName, t]);
 
   // settings

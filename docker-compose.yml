@@ -3,11 +3,12 @@ services:
     container_name: frigate
     restart: unless-stopped
     stop_grace_period: 30s
-    image: ghcr.io/blakeblackshear/frigate:stable
-    # Use development image if you want to test your local changes
-    # build:
-    #   context: .
-    #   dockerfile: docker/main/Dockerfile
+    # Use your pre-built custom image pushed to registry
+    # image: kumar2421/frigate-custom:1.0.0
+    # If you prefer building locally instead of pulling:
+    build:
+      context: .
+      dockerfile: custom-detector/Dockerfile
 
     shm_size: '512mb' # Adjust based on your camera count and resolution
 
@@ -19,8 +20,9 @@ services:
       - frigate_db:/db
       # Mount storage for recordings, clips, etc.
       - ./input:/media/frigate:rw
-      # Mount local web build to COMPLETELY override container's pre-built web files
-      # This ensures all old favicon files in /opt/frigate/web/assets/ are replaced
+      # Bind-mount testinput directory so files are visible at /media/frigate/testinput
+      - ./testinput:/media/frigate/testinput:ro
+      # Use built-in web UI from the image. Uncomment to override with local dist:
       - ./web/dist:/opt/frigate/web:ro
       # Use tmpfs for cache (eliminates Windows path issues)
       - type: tmpfs
@@ -45,6 +47,19 @@ services:
       - FRIGATE_RTSP_PASSWORD=password
       # Optional: Set config directory
       - FRIGATE_CONFIG_DIR=/config
+      # Fire detection model configuration
+      # - FIRE_MODEL_PATH=/config/yolov8n_opset21.onnx
+      # - FIRE_THRESHOLD=0.25
+      # Face detection model configuration (secondary detector)
+      - FACE_MODEL_PATH=/config/yolov8n-face-lindevs.pt
+      - FACE_THRESHOLD=0.25
+      # Save directory for YOLO annotated frames (inside container and mapped to host)
+      - YOLO_SAVE_DIR=/config/yolo
+      - FACE_ALWAYS_RUN=0
+      - FIRE_ALWAYS_RUN=0
+      # Draw DeepSORT IDs and boxes on saved clip images
+      - DRAW_CLIP_OVERLAYS=1
+      - CLIPS_OUTPUT_DIR=/media/frigate/clips
     # Optional: For hardware acceleration (if you have compatible GPU)
     # devices:
     #   - /dev/dri/renderD128  # Intel GPU

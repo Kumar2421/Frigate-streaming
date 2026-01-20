@@ -1,5 +1,5 @@
 {
-  "documentTitle": "Explore - Fusion Nvr",
+  "documentTitle": "Explore - Fusion NVR",
   "generativeAI": "Generative AI",
   "exploreMore": "Explore more {{label}} objects",
   "exploreIsUnavailable": {
@@ -16,7 +16,7 @@
       }
     },
     "downloadingModels": {
-      "context": "Fusion Nvr is downloading the necessary embeddings models to support the Semantic Search feature. This may take several minutes depending on the speed of your network connection.",
+      "context": "Fusion NVR is downloading the necessary embeddings models to support the Semantic Search feature. This may take several minutes depending on the speed of your network connection.",
       "setup": {
         "visionModel": "Vision model",
         "visionModelFeatureExtractor": "Vision model feature extractor",
@@ -26,7 +26,7 @@
       "tips": {
         "context": "You may want to reindex the embeddings of your tracked objects once the models are downloaded."
       },
-      "error": "An error has occurred. Check Fusion Nvr logs."
+      "error": "An error has occurred. Check Fusion NVR logs."
     }
   },
   "trackedObjectDetails": "Tracked Object Details",

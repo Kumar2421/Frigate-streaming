@@ -1,9 +1,9 @@
 {
   "restart": {
-    "title": "Are you sure you want to restart Fusion Nvr?",
+    "title": "Are you sure you want to restart Fusion NVR?",
     "button": "Restart",
     "restarting": {
-      "title": "Fusion Nvr is Restarting",
+      "title": "Fusion NVR is Restarting",
       "content": "This page will reload in {{countdown}} seconds.",
       "button": "Force Reload Now"
     }

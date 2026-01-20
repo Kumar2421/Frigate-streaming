@@ -1,4 +1,4 @@
-# Fusion Nvr
+# Fusion NVR
 
 A custom NVR (Network Video Recorder) solution based on Frigate, featuring object detection, tracking, and recording capabilities. This project includes custom branding, Docker deployment, and optimized configuration for production use.
 
@@ -30,16 +30,16 @@ npm run build:local
 cd ..
 ```
 
-**3. Start Fusion Nvr:**
+**3. Start Fusion NVR:**
 ```bash
 docker compose up -d
 ```
 
 **4. Access the web interface:**
 - Open your browser and navigate to: `http://localhost:5001`
-- The web interface will show "Fusion Nvr" with custom branding
+- The web interface will show "Fusion NVR" with custom branding
 
-**5. Stop Fusion Nvr:**
+**5. Stop Fusion NVR:**
 ```bash
 docker compose down
 ```
@@ -56,7 +56,7 @@ setup-python-env.bat
 setup-python310-env.bat
 ```
 
-**Run Fusion Nvr:**
+**Run Fusion NVR:**
 ```bash
 # For Python 3.11+
 .\run-frigate-python.bat
@@ -107,8 +107,8 @@ frigate/
 ├── requirements-python.txt # Python dependencies
 ├── setup-python-env.bat    # Python 3.11+ setup script
 ├── setup-python310-env.bat # Python 3.10 setup script
-├── run-frigate-python.bat  # Run Fusion Nvr (Python 3.11+)
-└── run-frigate-python310.bat # Run Fusion Nvr (Python 3.10)
+├── run-frigate-python.bat  # Run Fusion NVR (Python 3.11+)
+└── run-frigate-python310.bat # Run Fusion NVR (Python 3.10)
 ```
 
 ## ⚙️ Configuration
@@ -316,7 +316,7 @@ If you encounter issues:
 
 ### Changing the Application Name
 
-1. Update translation files in `web/public/locales/en/` (replace "Fusion Nvr" with your name)
+1. Update translation files in `web/public/locales/en/` (replace "Fusion NVR" with your name)
 2. Update `web/site.webmanifest` with your application name
 3. Rebuild the frontend and restart Docker
 

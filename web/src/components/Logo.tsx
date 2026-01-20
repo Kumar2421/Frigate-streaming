@@ -9,7 +9,7 @@ export default function Logo({ className }: LogoProps) {
   return (
     <img
       src={logoImage}
-      alt="Fusion Nvr"
+      alt="Fusion NVR"
       className={cn("object-contain", className)}
     />
   );

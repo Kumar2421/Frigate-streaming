@@ -1,0 +1,148 @@
+database:
+  path: /db/frigate.db
+model:
+  model_type: yolo-generic
+  width: 640
+  height: 640
+  input_tensor: nchw
+  input_dtype: float
+  input_pixel_format: bgr
+  path: /config/yolov8n_opset21.onnx
+mqtt:
+  enabled: false
+logger:
+  default: warning
+  logs:
+    frigate.track: error
+    frigate.camera.state: error
+    frigate.embeddings: error
+    frigate.comms: error
+    frigate.events: error
+    frigate.track.tracked_object: error
+    frigate.track.object_processing: error
+    frigate.track.deepocsort_tracker: error
+cameras:
+  em-dept-exit:
+    enabled: false
+    ffmpeg:
+      inputs:
+      - path: # Placeholder for RTSP stream
+        roles:
+        - detect
+        - record
+    detect:
+      enabled: true
+      width: 1280
+      height: 720
+    objects:
+      track:
+      - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+    motion:
+      threshold: 50
+      contour_area: 10
+      improve_contrast: true
+    zones:
+      Exit-Zone:
+        coordinates: 0.275,0.071,0.745,0.071,0.742,0.998,0.305,1
+        loitering_time: 0
+        objects: person
+  em-dept-entry:
+    enabled: false
+    ffmpeg:
+      inputs:
+      - path: # Placeholder for RTSP stream
+        roles:
+        - detect
+        - record
+    detect:
+      enabled: true
+      width: 1280
+      height: 720
+    objects:
+      track:
+      - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+    motion:
+      threshold: 50
+      contour_area: 10
+      improve_contrast: true
+  em-dept-rightexit:
+    enabled: false
+    ffmpeg:
+      inputs:
+      - path: # Placeholder for RTSP stream
+        roles:
+        - detect
+        - record
+    detect:
+      enabled: false
+      width: 1280
+      height: 720
+    objects:
+      track:
+      - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+    motion:
+      mask: 0.023,0.02,0.333,0.018,0.333,0.099,0.016,0.124
+  em-dept-sideexit:
+    enabled: false
+    ffmpeg:
+      inputs:
+      - path: # Placeholder for RTSP stream
+        roles:
+        - detect
+        - record
+    detect:
+      enabled: false
+      width: 1280
+      height: 720
+    objects:
+      track:
+      - person
+      filters:
+        person:
+          min_area: 5000
+          max_area: 100000
+          min_score: 0.5
+          threshold: 0.7
+record:
+  enabled: true
+  retain:
+    days: 7
+    mode: motion
+snapshots:
+  enabled: true
+  retain:
+    default: 30
+version: 0.17-0
+camera_groups:
+  Groupy:
+    order: 1
+    icon: LuActivity
+    cameras:
+    - em-dept-exit
+    - em-dept-entry
+semantic_search:
+  enabled: false
+detectors:
+  onnx:
+    type: onnx
+    device: AUTO
+detect:
+  enabled: true

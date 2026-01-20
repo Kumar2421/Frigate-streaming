@@ -1,15 +1,15 @@
 {
   "documentTitle": {
-    "default": "Settings - Fusion Nvr",
-    "authentication": "Authentication Settings - Fusion Nvr",
-    "camera": "Camera Settings - Fusion Nvr",
-    "enrichments": "Enrichments Settings - Fusion Nvr",
-    "masksAndZones": "Mask and Zone Editor - Fusion Nvr",
-    "motionTuner": "Motion Tuner - Fusion Nvr",
-    "object": "Debug - Fusion Nvr",
-    "general": "General Settings - Fusion Nvr",
-    "frigatePlus": "Frigate+ Settings - Fusion Nvr",
-    "notifications": "Notification Settings - Fusion Nvr"
+    "default": "Settings - Fusion NVR",
+    "authentication": "Authentication Settings - Fusion NVR",
+    "camera": "Camera Settings - Fusion NVR",
+    "enrichments": "Enrichments Settings - Fusion NVR",
+    "masksAndZones": "Mask and Zone Editor - Fusion NVR",
+    "motionTuner": "Motion Tuner - Fusion NVR",
+    "object": "Debug - Fusion NVR",
+    "general": "General Settings - Fusion NVR",
+    "frigatePlus": "Frigate+ Settings - Fusion NVR",
+    "notifications": "Notification Settings - Fusion NVR"
   },
   "menu": {
     "ui": "UI",
@@ -165,7 +165,6 @@
     "reviewClassification": {
       "title": "Review Classification",
       "desc": "Frigate categorizes review items as Alerts and Detections. By default, all <em>person</em> and <em>car</em> objects are considered Alerts. You can refine categorization of your review items by configuring required zones for them.",
-
       "noDefinedZones": "No zones are defined for this camera.",
       "objectAlertsTips": "All {{alertsLabels}} objects on {{cameraName}} will be shown as Alerts.",
       "zoneObjectAlertsTips": "All {{alertsLabels}} objects detected in {{zone}} on {{cameraName}} will be shown as Alerts.",
@@ -280,7 +279,7 @@
     },
     "zones": {
       "label": "Zones",
-      "documentTitle": "Edit Zone - Fusion Nvr",
+      "documentTitle": "Edit Zone - Fusion NVR",
       "desc": {
         "title": "Zones allow you to define a specific area of the frame so you can determine whether or not an object is within a particular area.",
         "documentation": "Documentation"
@@ -332,7 +331,7 @@
     },
     "motionMasks": {
       "label": "Motion Mask",
-      "documentTitle": "Edit Motion Mask - Fusion Nvr",
+      "documentTitle": "Edit Motion Mask - Fusion NVR",
       "desc": {
         "title": "Motion masks are used to prevent unwanted types of motion from triggering detection. Over masking will make it more difficult for objects to be tracked.",
         "documentation": "Documentation"
@@ -358,7 +357,7 @@
     },
     "objectMasks": {
       "label": "Object Masks",
-      "documentTitle": "Edit Object Mask - Fusion Nvr",
+      "documentTitle": "Edit Object Mask - Fusion NVR",
       "desc": {
         "title": "Object filter masks are used to filter out false positives for a given object type based on location.",
         "documentation": "Documentation"

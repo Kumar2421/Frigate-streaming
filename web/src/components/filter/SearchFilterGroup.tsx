@@ -86,6 +86,9 @@ export default function SearchFilterGroup({
       }
     });
 
+    // Ensure new custom label 'fire' appears in the UI even if not yet in camera configs
+    labels.add("fire");
+
     return [...labels].sort();
   }, [config, filterList, filter]);
 
@@ -207,9 +210,9 @@ export default function SearchFilterGroup({
             filter?.after == undefined || filter?.before == undefined
               ? undefined
               : {
-                  from: new Date(filter.after * 1000),
-                  to: new Date(filter.before * 1000),
-                }
+                from: new Date(filter.after * 1000),
+                to: new Date(filter.before * 1000),
+              }
           }
           defaultText={isMobile ? t("dates.all.short") : t("dates.all.title")}
           updateSelectedRange={onUpdateSelectedRange}

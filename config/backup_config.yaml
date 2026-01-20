@@ -1,36 +1,15 @@
-# ============================================
-# BASIC FRIGATE CONFIGURATION
-# Advanced AI features (Gemini, DeepOCSORT, Whisper) are DISABLED
-# Only core Frigate features are enabled:
-# - Object Detection & Tracking (Norfair)
-# - Recording & Snapshots
-# - Motion Detection
-# - Camera Monitoring
-# ============================================
-
-# Database configuration (use Docker volume to avoid Windows filesystem issues)
 database:
   path: /db/frigate.db
-
-# Global Model Configuration
-# This model config will be used by all detectors unless overridden
 model:
-  model_type: yolo-generic  # YOLO generic type supports YOLO 8
-  width: 640  # YOLO 8 default input size (adjust based on your model)
-  height: 640  # YOLO 8 default input size (adjust based on your model)
-  input_tensor: nchw  # NCHW format for YOLO models
-  input_dtype: float  # Float32 input
-  input_pixel_format: bgr  # BGR color format
-  path: "/config/yolo8n.onnx"  # Absolute path to YOLO 8 ONNX model in Docker container
-  # labelmap_path is optional - Frigate will use default if not specified
-
-# MQTT - DISABLED (optional, enable if you need MQTT integration)
+  model_type: yolo-generic
+  width: 640
+  height: 640
+  input_tensor: nchw
+  input_dtype: float
+  input_pixel_format: bgr
+  path: /config/yolov8n_opset21.onnx
 mqtt:
   enabled: false
-  # host: broker.emqx.io
-  # port: 1883
-
-# Logger configuration to reduce debug output
 logger:
   default: warning
   logs:
@@ -40,72 +19,63 @@ logger:
     frigate.comms: error
     frigate.events: error
     frigate.track.tracked_object: error
-    frigate.track.object_processing: error
+    frigate.track.object_processing: info
     frigate.track.deepocsort_tracker: error
 
-# Note: DeepOCSORT tracking is not available in the stable Frigate version
-# Using default Norfair tracking instead
-
 cameras:
-
-  em-dept-exit: # <------ Name the camera
+  entry:
     enabled: true
     ffmpeg:
+      input_args:
+        - -rtsp_transport
+        - tcp
       inputs:
-        - path: rtsp://admin:Admin@123@121.200.48.187:554/Streaming/Channels/102 # <----- The stream you want to use for detection
-          roles:
-            - detect
-            - record
+      - path: rtsp://support:Support@1@115.240.252.217:555/live
+        roles:
+        - detect
+        - record
     detect:
-      enabled: true # <---- disable detection until you have a working camera feed
+      enabled: true
       width: 1280
       height: 720
     objects:
       track:
-        - person
+      - person
       filters:
         person:
           min_area: 5000
           max_area: 100000
           min_score: 0.5
           threshold: 0.7
-    # zones:
-    #   Tex-Capture:
-    #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-    #     inertia: 1
-    #     loitering_time: 0
-    #     objects: person
     motion:
       threshold: 50
       contour_area: 10
       improve_contrast: true
-
     zones:
       Exit-Zone:
         coordinates: 0.275,0.071,0.745,0.071,0.742,0.998,0.305,1
         loitering_time: 0
-        objects: person
-  em-dept-entry: # <------ Name the camera
+        objects:
+        - person
+  exit:
     enabled: true
     ffmpeg:
+      input_args:
+        - -re
+        - -stream_loop
+        - "-1"
       inputs:
-        - path: rtsp://admin:Admin@123@121.200.50.147:554/Streaming/Channels/102 # <----- The stream you want to use for detection
+        - path: /media/frigate/testinput/57.27.mp4
           roles:
-            - detect
-            - record
+          - detect
+          # - record
     detect:
-      enabled: true # <---- disable detection until you have a working camera feed
+      enabled: true
       width: 1280
       height: 720
-    # zones:
-    #   Tex-Capture:
-    #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-    #     inertia: 1
-    #     loitering_time: 0
-    #     objects: person
     objects:
       track:
-        - person
+      - person
       filters:
         person:
           min_area: 5000
@@ -116,184 +86,50 @@ cameras:
       threshold: 50
       contour_area: 10
       improve_contrast: true
-  em-dept-rightexit: # <------ Name the camera
-    enabled: true
-    ffmpeg:
-      inputs:
-        - path: rtsp://admin:abcd@321@121.200.48.187:555/Streaming/Channels/102 # <----- The stream you want to use for detection
-          roles:
-            - detect
-            - record
-    detect:
-      enabled: false # <---- disable detection until you have a working camera feed
-      width: 1280
-      height: 720
-    objects:
-      track:
-        - person
-      filters:
-        person:
-          min_area: 5000
-          max_area: 100000
-          min_score: 0.5
-          threshold: 0.7
-    motion:
-      mask: 0.023,0.02,0.333,0.018,0.333,0.099,0.016,0.124
-  em-dept-sideexit: # <------ Name the camera
-    enabled: true
-    ffmpeg:
-      inputs:
-        - path: rtsp://admin:abcd@321@121.200.48.187:556/Streaming/Channels/102 # <----- The stream you want to use for detection
-          roles:
-            - detect
-            - record
-    detect:
-      enabled: false # <---- disable detection until you have a working camera feed
-      width: 1280
-      height: 720
-    objects:
-      track:
-        - person
-      filters:
-        person:
-          min_area: 5000
-          max_area: 100000
-          min_score: 0.5
-          threshold: 0.7
-  # nar-b-entry: # <------ Name the camera
+  # em-dept-rightexit:
   #   enabled: true
   #   ffmpeg:
   #     inputs:
-  #       - path: rtsp://admin:nspira@12@182.78.12.230:1024/live # <----- The stream you want to use for detection
-  #         roles:
-  #           - detect
-  #           - record
+  #     - path: rtsp://admin:abcd@321@121.200.48.187:555/Streaming/Channels/102
+  #       roles:
+  #       - detect
+  #       - record
   #   detect:
-  #     enabled: true # <---- disable detection until you have a working camera feed
-  #     width: 1280
-  #     height: 720
-  #   # zones:
-  #   #   Tex-Capture:
-  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-  #   #     inertia: 1
-  #   #     loitering_time: 0
-  #   #     objects: person
-  #   motion:
-  #     threshold: 50
-  #     contour_area: 10
-  #     improve_contrast: true
-  # nar-b-exit: # <------ Name the camera
-  #   enabled: true
-  #   ffmpeg:
-  #     inputs:
-  #       - path: rtsp://admin:nspira@12@182.78.12.230:1026/live # <----- The stream you want to use for detection
-  #         roles:
-  #           - detect
-  #           - record
-  #   detect:
-  #     enabled: false # <---- disable detection until you have a working camera feed
-  #     width: 1280
-  #     height: 720
-  #   # zones:
-  #   #   Tex-Capture:
-  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-  #   #     inertia: 1
-  #   #     loitering_time: 0
-  #   #     objects: person
-    # motion:
-    #   threshold: 50
-    #   contour_area: 10
-    #   improve_contrast: true
-  # tex-entry: # <------ Name the camera
-  #   enabled: true
-  #   ffmpeg:
-  #     inputs:
-  #       - path: rtsp://admin:Admin@123@103.110.239.201:563/live # <----- The stream you want to use for detection
-  #         roles:
-  #           - detect
-  #           - record
-  #   # objects:
-  #   #   track:
-  #   #     - car
-  #   detect:
-  #     enabled: false # <---- disable detection until you have a working camera feed
+  #     enabled: false
   #     width: 1280
   #     height: 720
   #   objects:
   #     track:
-  #       - person
+  #     - person
   #     filters:
   #       person:
   #         min_area: 5000
   #         max_area: 100000
   #         min_score: 0.5
   #         threshold: 0.7
-
-    # zones:
-    #   Tex-Capture:
-    #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-    #     inertia: 1
-    #     loitering_time: 0
-    #     objects: person
-    # motion:
-    #   threshold: 50
-    #   contour_area: 10
-    #   improve_contrast: true
-
-  # prozone-exit: # <------ Name the camera
+  #   motion:
+  #     mask: 0.023,0.02,0.333,0.018,0.333,0.099,0.016,0.124
+  # em-dept-sideexit:
   #   enabled: true
   #   ffmpeg:
   #     inputs:
-  #       - path: rtsp://admin:prozone@321@163.47.211.117:554/live # <----- The stream you want to use for detection
-  #         roles:
-  #           - detect
-  #           - record
+  #     - path: rtsp://admin:abcd@321@121.200.48.187:556/Streaming/Channels/102
+  #       roles:
+  #       - detect
+  #       - record
+  #   detect:
+  #     enabled: false
+  #     width: 1280
+  #     height: 720
   #   objects:
   #     track:
-  #       - car
-  #   # detect:
-  #   #   enabled: true # <---- disable detection until you have a working camera feed
-  #   #   width: 1280
-  #   #   height: 720
-
-  #   # zones:
-  #   #   Tex-Capture:
-  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-  #   #     inertia: 1
-  #   #     loitering_time: 0
-  #   #     objects: person
-  #   motion:
-  #     threshold: 50
-  #     contour_area: 10
-  #     improve_contrast: true
-
-  # prozone-entry: # <------ Name the camera
-  #   enabled: true
-  #   ffmpeg:
-  #     inputs:
-  #       - path: rtsp://admin:skt@1234@163.47.211.117:555/live # <----- The stream you want to use for detection
-  #         roles:
-  #           - detect
-  #           - record
-  #   objects:
-  #     track:
-  #       - car
-  #   # detect:
-  #   #   enabled: true # <---- disable detection until you have a working camera feed
-  #   #   width: 1280
-  #   #   height: 720
-
-  #   # zones:
-  #   #   Tex-Capture:
-  #   #     coordinates: 0.152,0.255,0.15,0.77,0.755,0.849,0.781,0.187
-  #   #     inertia: 1
-  #   #     loitering_time: 0
-  #   #     objects: person
-  #   motion:
-  #     threshold: 50
-  #     contour_area: 10
-  #     improve_contrast: true
-
+  #     - person
+  #     filters:
+  #       person:
+  #         min_area: 5000
+  #         max_area: 100000
+  #         min_score: 0.5
+  #         threshold: 0.7
 record:
   enabled: true
   retain:
@@ -301,6 +137,8 @@ record:
     mode: motion
 snapshots:
   enabled: true
+  bounding_box: true
+  timestamp: true
   retain:
     default: 30
 version: 0.17-0
@@ -309,28 +147,12 @@ camera_groups:
     order: 1
     icon: LuActivity
     cameras:
-      - em-dept-exit
-      - em-dept-entry
-# Semantic Search - DISABLED (Basic Frigate only)
+    - entry
 semantic_search:
   enabled: false
-
-# Detectors Configuration
-# Using ONNX detector with YOLO 8 model
-# YOLO 8 provides better accuracy than CPU detector
-# Model config is in global 'model:' section above
 detectors:
   onnx:
     type: onnx
-    device: AUTO  # AUTO, CPU, or GPU (if available)
-    # Model config will be inherited from global model: section
-
-# FFmpeg Configuration
-# In Docker, FFmpeg is pre-installed - no path configuration needed
-# For native Windows, uncomment and set path:
-# ffmpeg:
-#   path: "ffmpeg"  # or full path like "C:/ffmpeg/bin/ffmpeg"
-
-# Basic Detection - ENABLED
+    device: AUTO
 detect:
   enabled: true

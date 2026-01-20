@@ -2,7 +2,14 @@ README.md
 docs/
 .gitignore
 debug
-config/
+
+# Exclude most of config from build context, but keep required files/models
+config/*
+!config/config.yml
+!config/deepsort_config.yml
+!config/yolov8n_opset21.onnx
+!config/yolov8n.onnx
+
 *.pyc
 .git
 core

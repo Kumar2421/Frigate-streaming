@@ -1,8 +1,8 @@
 {
-  "documentTitle": "Config Editor - Fusion Nvr",
+  "documentTitle": "Config Editor - Fusion NVR",
   "configEditor": "Config Editor",
   "safeConfigEditor": "Config Editor (Safe Mode)",
-  "safeModeDescription": "Fusion Nvr is in safe mode due to a config validation error.",
+  "safeModeDescription": "Fusion NVR is in safe mode due to a config validation error.",
   "copyConfig": "Copy Config",
   "saveAndRestart": "Save & Restart",
   "saveOnly": "Save Only",

@@ -97,8 +97,8 @@
   },
   "notifications": "Meldingen",
   "audio": "Geluid",
-  "documentTitle": "Live - Frigate",
-  "documentTitle.withCamera": "{{camera}} - Live - Frigate",
+  "documentTitle": "Live - Fusion NVR",
+  "documentTitle.withCamera": "{{camera}} - Live - Fusion NVR",
   "autotracking": {
     "enable": "Automatisch volgen inschakelen",
     "disable": "Automatisch volgen uitschakelen"

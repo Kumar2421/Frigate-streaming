@@ -51,8 +51,8 @@
       }
     }
   },
-  "documentTitle": "Live - Frigate",
-  "documentTitle.withCamera": "{{camera}} - Live - Frigate",
+  "documentTitle": "Live - Fusion NVR",
+  "documentTitle.withCamera": "{{camera}} - Live - Fusion NVR",
   "muteCameras": {
     "disable": "Stumm aller Kameras aufheben",
     "enable": "Alle Kameras auf stumm"

@@ -420,3 +420,7 @@ class DeepSORTFrigateTracker(ObjectTracker):
             'motion_enhancements': 0
         }
         logger.info("DeepSORT tracker reset")
+
+# Backwards-compatible alias expected by object_processing.py
+class DeepOCSORTTracker(DeepSORTFrigateTracker):
+    pass

@@ -5,6 +5,9 @@ FROM ghcr.io/blakeblackshear/frigate:stable
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
+# NOTE: Build with root context so we can copy config/models:
+#   docker build -f custom-detector/Dockerfile -t yourname/frigate-custom:latest .
+
 # Install system dependencies for DeepSORT and Node.js for web rebuild
 RUN apt-get update && apt-get install -y \
     python3-pip \
@@ -62,19 +65,22 @@ RUN pip3 install \
     psutil \
     --break-system-packages
 
-# Create custom tracker directory
-RUN mkdir -p /opt/frigate/custom_trackers
+# Install Ultralytics for YOLOv8/YOLO models (.pt)
+RUN pip3 install ultralytics --break-system-packages
+
+# Create custom tracker and default config directories
+RUN mkdir -p /opt/frigate/custom_trackers /opt/frigate/config_defaults
 
 # Copy custom DeepSORT tracker
-COPY deepsort_tracker.py /opt/frigate/custom_trackers/
-COPY requirements.txt /opt/frigate/custom_trackers/
+COPY custom-detector/deepsort_tracker.py /opt/frigate/custom_trackers/
+COPY custom-detector/requirements.txt /opt/frigate/custom_trackers/
 
 # Install custom tracker requirements
 RUN cd /opt/frigate/custom_trackers && pip3 install -r requirements.txt --break-system-packages
 
 # Create patch script to integrate DeepSORT tracker
-COPY patch_frigate.py /opt/frigate/custom_trackers/
-COPY integrate_deepsort.py /opt/frigate/custom_trackers/
+COPY custom-detector/patch_frigate.py /opt/frigate/custom_trackers/
+COPY custom-detector/integrate_deepsort.py /opt/frigate/custom_trackers/
 RUN chmod +x /opt/frigate/custom_trackers/patch_frigate.py
 RUN chmod +x /opt/frigate/custom_trackers/integrate_deepsort.py
 
@@ -82,18 +88,34 @@ RUN chmod +x /opt/frigate/custom_trackers/integrate_deepsort.py
 RUN cd /opt/frigate/custom_trackers && python3 patch_frigate.py
 
 # Copy modified birdseye.py to use logo.png instead of birdseye.png
-COPY birdseye.py /opt/frigate/frigate/output/birdseye.py
+COPY custom-detector/birdseye.py /opt/frigate/frigate/output/birdseye.py
+
+# Ensure const.py in the image matches our local version (adds UPDATE_BIRDSEYE_LAYOUT, etc.)
+COPY frigate/const.py /opt/frigate/frigate/const.py
+
+# Copy modified object_processing.py to include secondary face/fire model logic
+COPY frigate/track/object_processing.py /opt/frigate/frigate/track/object_processing.py
+
+# Ensure DeepOCSORTTracker is importable from frigate.track.deepocsort_tracker
+COPY custom-detector/deepsort_tracker.py /opt/frigate/frigate/track/deepocsort_tracker.py
 
 # Copy logo.png and replace birdseye.png with it
-COPY logo.png /opt/frigate/frigate/images/logo.png
+COPY custom-detector/logo.png /opt/frigate/frigate/images/logo.png
 RUN cp /opt/frigate/frigate/images/logo.png /opt/frigate/frigate/images/birdseye.png
 
+# Bundle default configs and models so image works without external volumes
+COPY config/config.yml /opt/frigate/config_defaults/config.yml
+# deepsort_config.yml removed - DeepSORT integration is disabled in entrypoint
+COPY config/yolov8n_opset21.onnx /opt/frigate/config_defaults/yolov8n_opset21.onnx
+# Optional legacy model if needed by consumers
+COPY config/yolov8n.onnx /opt/frigate/config_defaults/yolov8n.onnx
+
 # Copy web source files for rebuilding
-COPY web-source /tmp/web-source
+COPY custom-detector/web-source /tmp/web-source
 
 # Copy modified Logo component to web source
-COPY Logo.tsx /tmp/web-source/src/components/Logo.tsx
-COPY logo.png /tmp/web-source/public/images/logo.png
+COPY custom-detector/Logo.tsx /tmp/web-source/src/components/Logo.tsx
+COPY custom-detector/logo.png /tmp/web-source/public/images/logo.png
 
 # Rebuild web app with modified Logo component
 WORKDIR /tmp/web-source
@@ -104,11 +126,15 @@ RUN npm install && npm run build \
 # Copy rebuilt web files to final location
 RUN cp -r dist/* /opt/frigate/web/
 
+# Copy enhanced entrypoint script
+COPY custom-detector/entrypoint.sh /opt/frigate/entrypoint.sh
+RUN chmod +x /opt/frigate/entrypoint.sh
+
 # Set working directory
 WORKDIR /opt/frigate
 
 # Expose ports (same as original Frigate)
 EXPOSE 5000 8554 8555 8556
 
-# Use original Frigate entrypoint
-ENTRYPOINT ["/init"]
+# Use enhanced entrypoint that ensures config directory exists
+ENTRYPOINT ["/opt/frigate/entrypoint.sh"]

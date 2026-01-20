@@ -1,6 +1,6 @@
 {
-  "documentTitle": "Live - Fusion Nvr",
-  "documentTitle.withCamera": "{{camera}} - Live - Fusion Nvr",
+  "documentTitle": "Live - Fusion NVR",
+  "documentTitle.withCamera": "{{camera}} - Live - Fusion NVR",
   "lowBandwidthMode": "Low-bandwidth Mode",
   "twoWayTalk": {
     "enable": "Enable Two Way Talk",

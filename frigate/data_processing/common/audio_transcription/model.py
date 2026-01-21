@@ -3,7 +3,10 @@
 import logging
 import os
 
-import sherpa_onnx
+try:
+    import sherpa_onnx  # type: ignore
+except ModuleNotFoundError:
+    sherpa_onnx = None
 from faster_whisper.utils import download_model
 
 from frigate.comms.inter_process import InterProcessRequestor
@@ -35,6 +38,9 @@ class AudioTranscriptionModelRunner:
 
         else:
             # small model as default
+            if sherpa_onnx is None:
+                logger.error("sherpa_onnx is not installed; audio transcription (small) is disabled")
+                return
             download_path = os.path.join(MODEL_CACHE_DIR, "sherpa-onnx")
             HF_ENDPOINT = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
             self.model_files = {

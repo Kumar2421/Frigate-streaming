@@ -44,9 +44,6 @@ from frigate.data_processing.common.license_plate.model import (
     LicensePlateModelRunner,
 )
 from frigate.data_processing.post.api import PostProcessorApi
-from frigate.data_processing.post.audio_transcription import (
-    AudioTranscriptionPostProcessor,
-)
 from frigate.data_processing.post.license_plate import (
     LicensePlatePostProcessor,
 )
@@ -231,9 +228,16 @@ class EmbeddingMaintainer(threading.Thread):
             c.enabled_in_config and c.audio_transcription.enabled
             for c in self.config.cameras.values()
         ):
-            self.post_processors.append(
-                AudioTranscriptionPostProcessor(self.config, self.requestor, metrics)
-            )
+            try:
+                from frigate.data_processing.post.audio_transcription import (
+                    AudioTranscriptionPostProcessor,
+                )
+
+                self.post_processors.append(
+                    AudioTranscriptionPostProcessor(self.config, self.requestor, metrics)
+                )
+            except ModuleNotFoundError as e:
+                logger.warning(f"Audio transcription disabled due to missing dependency: {e}")
 
         if self.config.semantic_search.enabled:
             self.post_processors.append(

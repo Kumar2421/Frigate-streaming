@@ -69,16 +69,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { LuInfo, LuSearch } from "react-icons/lu";
+import { LuInfo } from "react-icons/lu";
 import { TooltipPortal } from "@radix-ui/react-tooltip";
 import { FaPencilAlt } from "react-icons/fa";
 import TextEntryDialog from "@/components/overlay/dialog/TextEntryDialog";
 import { Trans, useTranslation } from "react-i18next";
-import { TbFaceId } from "react-icons/tb";
 import { useIsAdmin } from "@/hooks/use-is-admin";
-import FaceSelectionDialog from "../FaceSelectionDialog";
 import { getTranslatedLabel } from "@/utils/i18n";
-import { CgTranscript } from "react-icons/cg";
 import { CameraNameLabel } from "@/components/camera/CameraNameLabel";
 
 const SEARCH_TABS = [
@@ -199,7 +196,7 @@ export default function SearchDetailDialog({
         className={cn(
           "scrollbar-container overflow-y-auto",
           isDesktop &&
-            "max-h-[95dvh] sm:max-w-xl md:max-w-4xl lg:max-w-4xl xl:max-w-7xl",
+          "max-h-[95dvh] sm:max-w-xl md:max-w-4xl lg:max-w-4xl xl:max-w-7xl",
           isMobile && "px-4",
         )}
       >
@@ -256,12 +253,7 @@ export default function SearchDetailDialog({
         )}
         {page == "snapshot" && (
           <ObjectSnapshotTab
-            search={
-              {
-                ...search,
-                plus_id: config?.plus?.enabled ? search.plus_id : "not_enabled",
-              } as unknown as Event
-            }
+            search={search as unknown as Event}
             onEventUploaded={() => {
               search.plus_id = "new_upload";
             }}
@@ -273,7 +265,7 @@ export default function SearchDetailDialog({
             className="w-full overflow-x-hidden"
             event={search as unknown as Event}
             fullscreen={true}
-            setPane={() => {}}
+            setPane={() => { }}
           />
         )}
       </Content>
@@ -328,11 +320,11 @@ function ObjectDetailsTab({
     search?.start_time ?? 0,
     config?.ui.time_format == "24hour"
       ? t("time.formattedTimestampMonthDayYearHourMinute.24hour", {
-          ns: "common",
-        })
+        ns: "common",
+      })
       : t("time.formattedTimestampMonthDayYearHourMinute.12hour", {
-          ns: "common",
-        }),
+        ns: "common",
+      }),
     config?.ui.timezone,
   );
 
@@ -477,7 +469,7 @@ function ObjectDetailsTab({
               t("details.item.toast.success.regenerate", {
                 provider: capitalizeAll(
                   config?.genai.provider.replaceAll("_", " ") ??
-                    t("generativeAI"),
+                  t("generativeAI"),
                 ),
               }),
               {
@@ -496,7 +488,7 @@ function ObjectDetailsTab({
             t("details.item.toast.error.regenerate", {
               provider: capitalizeAll(
                 config?.genai.provider.replaceAll("_", " ") ??
-                  t("generativeAI"),
+                t("generativeAI"),
               ),
               errorMessage,
             }),
@@ -538,13 +530,13 @@ function ObjectDetailsTab({
                 return currentData.flat().map((event) =>
                   event.id === search.id
                     ? {
-                        ...event,
-                        sub_label: text,
-                        data: {
-                          ...event.data,
-                          sub_label_score: subLabelScore,
-                        },
-                      }
+                      ...event,
+                      sub_label: text,
+                      data: {
+                        ...event.data,
+                        sub_label_score: subLabelScore,
+                      },
+                    }
                     : event,
                 );
               },
@@ -615,13 +607,13 @@ function ObjectDetailsTab({
                 return currentData.flat().map((event) =>
                   event.id === search.id
                     ? {
-                        ...event,
-                        data: {
-                          ...event.data,
-                          recognized_license_plate: text,
-                          recognized_license_plate_score: plateScore,
-                        },
-                      }
+                      ...event,
+                      data: {
+                        ...event.data,
+                        recognized_license_plate: text,
+                        recognized_license_plate_score: plateScore,
+                      },
+                    }
                     : event,
                 );
               },
@@ -660,85 +652,6 @@ function ObjectDetailsTab({
     },
     [search, apiHost, mutate, setSearch, t],
   );
-
-  // face training
-
-  const hasFace = useMemo(() => {
-    if (!config?.face_recognition.enabled || !search) {
-      return false;
-    }
-
-    return search.data.attributes?.find((attr) => attr.label == "face");
-  }, [config, search]);
-
-  const { data: faceData } = useSWR(hasFace ? "faces" : null);
-
-  const faceNames = useMemo<string[]>(
-    () =>
-      faceData ? Object.keys(faceData).filter((face) => face != "train") : [],
-    [faceData],
-  );
-
-  const onTrainFace = useCallback(
-    (trainName: string) => {
-      axios
-        .post(`/faces/train/${trainName}/classify`, { event_id: search.id })
-        .then((resp) => {
-          if (resp.status == 200) {
-            toast.success(
-              t("toast.success.trainedFace", { ns: "views/faceLibrary" }),
-              {
-                position: "top-center",
-              },
-            );
-          }
-        })
-        .catch((error) => {
-          const errorMessage =
-            error.response?.data?.message ||
-            error.response?.data?.detail ||
-            "Unknown error";
-          toast.error(
-            t("toast.error.trainFailed", {
-              ns: "views/faceLibrary",
-              errorMessage,
-            }),
-            {
-              position: "top-center",
-            },
-          );
-        });
-    },
-    [search, t],
-  );
-
-  // speech transcription
-
-  const onTranscribe = useCallback(() => {
-    axios
-      .put(`/audio/transcribe`, { event_id: search.id })
-      .then((resp) => {
-        if (resp.status == 202) {
-          toast.success(t("details.item.toast.success.audioTranscription"), {
-            position: "top-center",
-          });
-        }
-      })
-      .catch((error) => {
-        const errorMessage =
-          error.response?.data?.message ||
-          error.response?.data?.detail ||
-          "Unknown error";
-        toast.error(
-          t("details.item.toast.error.audioTranscription", {
-            errorMessage,
-          }),
-          {
-            position: "top-center",
-          },
-        );
-      });
-  }, [search, t]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -881,9 +794,9 @@ function ObjectDetailsTab({
             style={
               isIOS
                 ? {
-                    WebkitUserSelect: "none",
-                    WebkitTouchCallout: "none",
-                  }
+                  WebkitUserSelect: "none",
+                  WebkitTouchCallout: "none",
+                }
                 : undefined
             }
             draggable={false}
@@ -892,141 +805,28 @@ function ObjectDetailsTab({
           <div
             className={cn("flex w-full flex-row gap-2", isMobile && "flex-col")}
           >
-            {config?.semantic_search.enabled &&
-              setSimilarity != undefined &&
-              search.data.type == "object" && (
-                <Button
-                  className="w-full"
-                  aria-label={t("itemMenu.findSimilar.aria")}
-                  onClick={() => {
-                    setSearch(undefined);
-                    setSimilarity();
-                  }}
-                >
-                  <div className="flex gap-1">
-                    <LuSearch />
-                    {t("itemMenu.findSimilar.label")}
-                  </div>
-                </Button>
-              )}
-            {hasFace && (
-              <FaceSelectionDialog
-                className="w-full"
-                faceNames={faceNames}
-                onTrainAttempt={onTrainFace}
-              >
-                <Button className="w-full">
-                  <div className="flex gap-1">
-                    <TbFaceId />
-                    {t("trainFace", { ns: "views/faceLibrary" })}
-                  </div>
-                </Button>
-              </FaceSelectionDialog>
-            )}
-            {config?.cameras[search?.camera].audio_transcription.enabled &&
-              search?.label == "speech" &&
-              search?.end_time && (
-                <Button className="w-full" onClick={onTranscribe}>
-                  <div className="flex gap-1">
-                    <CgTranscript />
-                    {t("itemMenu.audioTranscription.label")}
-                  </div>
-                </Button>
-              )}
           </div>
         </div>
       </div>
       <div className="flex flex-col gap-1.5">
-        {config?.cameras[search.camera].objects.genai.enabled &&
-        !search.end_time &&
-        (config.cameras[search.camera].objects.genai.required_zones.length ===
-          0 ||
-          search.zones.some((zone) =>
-            config.cameras[search.camera].objects.genai.required_zones.includes(
-              zone,
-            ),
-          )) &&
-        (config.cameras[search.camera].objects.genai.objects.length === 0 ||
-          config.cameras[search.camera].objects.genai.objects.includes(
-            search.label,
-          )) ? (
-          <>
-            <div className="text-sm text-primary/40">
-              {t("details.description.label")}
-            </div>
-            <div className="flex h-64 flex-col items-center justify-center gap-3 border p-4 text-sm text-primary/40">
-              <div className="flex">
-                <ActivityIndicator />
-              </div>
-              <div className="flex">{t("details.description.aiTips")}</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="text-sm text-primary/40"></div>
-            <Textarea
-              className="text-md h-64"
-              placeholder={t("details.description.placeholder")}
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              onFocus={handleDescriptionFocus}
-              onBlur={handleDescriptionBlur}
-            />
-          </>
-        )}
+        <div className="text-sm text-primary/40"></div>
+        <Textarea
+          className="text-md h-64"
+          placeholder={t("details.description.placeholder")}
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          onFocus={handleDescriptionFocus}
+          onBlur={handleDescriptionBlur}
+        />
 
         <div className="flex w-full flex-row justify-end gap-2">
-          {config?.cameras[search.camera].objects.genai.enabled &&
-            search.end_time && (
-              <div className="flex items-start">
-                <Button
-                  className="rounded-r-none border-r-0"
-                  aria-label={t("details.button.regenerate.label")}
-                  onClick={() => regenerateDescription("thumbnails")}
-                >
-                  {t("details.button.regenerate.title")}
-                </Button>
-                {search.has_snapshot && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        className="rounded-l-none border-l-0 px-2"
-                        aria-label={t("details.expandRegenerationMenu")}
-                      >
-                        <FaChevronDown className="size-3" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <DropdownMenuItem
-                        className="cursor-pointer"
-                        aria-label={t("details.regenerateFromSnapshot")}
-                        onClick={() => regenerateDescription("snapshot")}
-                      >
-                        {t("details.regenerateFromSnapshot")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="cursor-pointer"
-                        aria-label={t("details.regenerateFromThumbnails")}
-                        onClick={() => regenerateDescription("thumbnails")}
-                      >
-                        {t("details.regenerateFromThumbnails")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            )}
-          {((config?.cameras[search.camera].objects.genai.enabled &&
-            search.end_time) ||
-            !config?.cameras[search.camera].objects.genai.enabled) && (
-            <Button
-              variant="select"
-              aria-label={t("button.save", { ns: "common" })}
-              onClick={updateDescription}
-            >
-              {t("button.save", { ns: "common" })}
-            </Button>
-          )}
+          <Button
+            variant="select"
+            aria-label={t("button.save", { ns: "common" })}
+            onClick={updateDescription}
+          >
+            {t("button.save", { ns: "common" })}
+          </Button>
           <TextEntryDialog
             open={isSubLabelDialogOpen}
             setOpen={setIsSubLabelDialogOpen}
@@ -1034,8 +834,8 @@ function ObjectDetailsTab({
             description={
               search.label
                 ? t("details.editSubLabel.desc", {
-                    label: search.label,
-                  })
+                  label: search.label,
+                })
                 : t("details.editSubLabel.descNoLabel")
             }
             onSave={handleSubLabelSave}
@@ -1049,8 +849,8 @@ function ObjectDetailsTab({
             description={
               search.label
                 ? t("details.editLPR.desc", {
-                    label: search.label,
-                  })
+                  label: search.label,
+                })
                 : t("details.editLPR.descNoLabel")
             }
             onSave={handleLPRSave}
@@ -1096,8 +896,8 @@ export function ObjectSnapshotTab({
       falsePositive
         ? axios.put(`events/${search.id}/false_positive`)
         : axios.post(`events/${search.id}/plus`, {
-            include_annotation: 1,
-          });
+          include_annotation: 1,
+        });
 
       setState("submitted");
       onEventUploaded();

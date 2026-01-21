@@ -14,7 +14,7 @@ from frigate.config import (
     FrigateConfig,
     ZoomingModeEnum,
 )
-from frigate.const import CLIPS_DIR, THUMB_DIR
+from frigate.const import CLIPS_DIR, FACE_DIR, THUMB_DIR
 from frigate.ptz.autotrack import PtzAutoTrackerThread
 from frigate.track.tracked_object import TrackedObject
 from frigate.util.image import (
@@ -530,6 +530,8 @@ class CameraState:
     ) -> None:
         img_frame = frame if frame is not None else self.get_current_frame()
 
+        target_dir = FACE_DIR if label == "face" else CLIPS_DIR
+
         # write clean snapshot if enabled
         if self.camera_config.snapshots.clean_copy:
             ret, png = cv2.imencode(".png", img_frame)
@@ -537,7 +539,7 @@ class CameraState:
             if ret:
                 with open(
                     os.path.join(
-                        CLIPS_DIR,
+                        target_dir,
                         f"{self.camera_config.name}-{event_id}-clean.png",
                     ),
                     "wb",
@@ -567,7 +569,7 @@ class CameraState:
 
         ret, jpg = cv2.imencode(".jpg", img_frame)
         with open(
-            os.path.join(CLIPS_DIR, f"{self.camera_config.name}-{event_id}.jpg"),
+            os.path.join(target_dir, f"{self.camera_config.name}-{event_id}.jpg"),
             "wb",
         ) as j:
             j.write(jpg.tobytes())

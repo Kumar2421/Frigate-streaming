@@ -102,6 +102,15 @@ class TrackedObjectProcessor(threading.Thread):
             os.makedirs(self._clips_output_dir, exist_ok=True)
         except Exception:
             pass
+        self._face_output_dir = os.environ.get(
+            "FACE_OUTPUT_DIR", os.path.join(self._clips_output_dir, "faces")
+        )
+        try:
+            os.makedirs(self._face_output_dir, exist_ok=True)
+        except Exception:
+            pass
+        self._display_track_id_map = defaultdict(dict)
+        self._display_track_next = defaultdict(lambda: 1)
         # Optional fire detector configuration via environment
         self._fire_model = None
         self._fire_threshold = float(os.environ.get("FIRE_THRESHOLD", "0.5"))
@@ -814,8 +823,13 @@ class TrackedObjectProcessor(threading.Thread):
 
             self.update_mqtt_motion(camera, frame_time, motion_boxes)
 
-            
+            frame = None
+            if self._draw_clip_overlays or self._face_model:
+                frame = self.get_current_frame(camera)
 
+            face_extra = None
+            face_save_score = None
+            face_event_id = None
             # Secondary face detection on frames containing a person (optional)
             try:
                 if self._face_model and current_tracked_objects is not None:
@@ -825,15 +839,16 @@ class TrackedObjectProcessor(threading.Thread):
                         (hasattr(o, "obj_data") and isinstance(getattr(o, "obj_data"), dict) and o.obj_data.get("label") == "person")
                         for o in current_tracked_objects
                     )
-                    if has_person or self._face_always_run:
+                    # Run face model whenever frame is available (no person gating)
+                    if True or self._face_always_run:
                         logger.info(
                             f"Face inference: camera={camera}, has_person={has_person}, always_run={self._face_always_run}"
                         )
-                        frame = self.get_current_frame(camera)
                         if frame is None:
                             logger.info(f"Face detection skipped: no frame available for camera {camera}")
                             # clear any pending face dets for tracker if we have no frame
                             self._pending_face_detections = []
+                            face_extra = []
                         else:
                             img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             results = self._face_model.predict(
@@ -880,6 +895,7 @@ class TrackedObjectProcessor(threading.Thread):
                                 face_norm_dets = []
                             # store for merging into DeepSORT tracker update
                             self._pending_face_detections = face_norm_dets
+                            face_extra = face_norm_dets
                             face_score = 0.0
                             for r in results:
                                 names = getattr(r, "names", {}) or {}
@@ -897,13 +913,49 @@ class TrackedObjectProcessor(threading.Thread):
                                     if label == "face" or cls_id == 0:
                                         if conf > face_score:
                                             face_score = conf
+                            face_save_score = face_score
+                            try:
+                                logger.info(
+                                    f"Face detection results: camera={camera}, dets={len(face_norm_dets)}, best_score={face_score:.3f}, threshold={self._face_threshold:.3f}"
+                                )
+                            except Exception:
+                                pass
                             if face_score >= self._face_threshold:
                                 event_id = uuid.uuid4().hex
+                                face_event_id = event_id
                                 include_recording = True
                                 sub_label = None
                                 duration = None
                                 source_type = "api"
-                                draw = {}
+                                draw = {"boxes": []}
+                                try:
+                                    detect_cfg = self.config.cameras[camera].detect
+                                    w = float(detect_cfg.width)
+                                    h = float(detect_cfg.height)
+                                    for fobj in face_norm_dets:
+                                        fx1 = fobj.get("x1"); fy1 = fobj.get("y1"); fx2 = fobj.get("x2"); fy2 = fobj.get("y2")
+                                        if None in (fx1, fy1, fx2, fy2):
+                                            continue
+                                        fx1, fy1, fx2, fy2 = map(float, (fx1, fy1, fx2, fy2))
+                                        bw = max(0.0, (fx2 - fx1))
+                                        bh = max(0.0, (fy2 - fy1))
+                                        if w <= 0 or h <= 0 or bw <= 0 or bh <= 0:
+                                            continue
+                                        draw["boxes"].append(
+                                            {
+                                                "box": [fx1 / w, fy1 / h, bw / w, bh / h],
+                                                "score": int(float(fobj.get("score", 0.0)) * 100),
+                                                "color": (0, 120, 0),
+                                            }
+                                        )
+                                except Exception:
+                                    draw = {}
+                                try:
+                                    logger.info(
+                                        f"Face event created: camera={camera}, event_id={event_id}, score={face_score:.3f}"
+                                    )
+                                except Exception:
+                                    pass
                                 self.create_manual_event(
                                     (
                                         frame_time,
@@ -920,15 +972,17 @@ class TrackedObjectProcessor(threading.Thread):
                                 )
             except Exception as e:
                 logger.debug(f"Face detection step skipped due to error: {e}")
+                face_extra = getattr(self, "_pending_face_detections", None)
 
             # -------------- tracking --------------
+            # IMPORTANT: do not replace Frigate's tracked_objects pipeline.
+            # If we overwrite tracked_objects here, core event snapshot/clip saving breaks.
+            deep_tracked_objects = None
             if self.deep_tracker:
-    # Feed detections into DeepOCSORT
-                # Merge detections from primary (person) and face model (if any) for tracking
+                # Feed detections into DeepOCSORT (for overlay/track id purposes only)
                 detections_for_tracker = current_tracked_objects if current_tracked_objects else []
                 if isinstance(detections_for_tracker, tuple):
                     detections_for_tracker = list(detections_for_tracker)
-                face_extra = getattr(self, "_pending_face_detections", None)
                 if face_extra:
                     try:
                         detections_for_tracker = list(detections_for_tracker) + list(face_extra)
@@ -937,21 +991,37 @@ class TrackedObjectProcessor(threading.Thread):
                 self.deep_tracker.match_and_update(
                     frame_name=frame_name,
                     frame_time=frame_time,
-                    detections=detections_for_tracker
+                    detections=detections_for_tracker,
                 )
-                tracked_objects = list(self.deep_tracker.get_tracked_objects().values())
-            else:
-                tracked_objects = [
-                    o.to_dict() for o in camera_state.tracked_objects.values()
-                ]
+                deep_tracked_objects = list(self.deep_tracker.get_tracked_objects().values())
+
+            tracked_objects = [
+                o.to_dict() for o in camera_state.tracked_objects.values()
+            ]
 
             if self._draw_clip_overlays:
-                frame = self.get_current_frame(camera)
                 if frame is not None and tracked_objects is not None:
                     try:
                         annotated = frame.copy()
-                        for obj in tracked_objects:
-                            tid = obj.get("id") or obj.get("track_id") or obj.get("tracking_id")
+                        try:
+                            import time as _time
+                            sec = _time.strftime('%S', _time.localtime(frame_time))
+                        except Exception:
+                            sec = f"{int(frame_time)%60:02d}"
+                        overlay_objects = deep_tracked_objects if deep_tracked_objects is not None else tracked_objects
+                        for obj in overlay_objects:
+                            raw_tid = obj.get("id") or obj.get("track_id") or obj.get("tracking_id")
+                            tid = None
+                            if raw_tid is not None:
+                                try:
+                                    tid_key = str(raw_tid)
+                                    cam_map = self._display_track_id_map[camera]
+                                    if tid_key not in cam_map:
+                                        cam_map[tid_key] = self._display_track_next[camera]
+                                        self._display_track_next[camera] += 1
+                                    tid = cam_map[tid_key]
+                                except Exception:
+                                    tid = None
                             # Try multiple bbox formats
                             x1 = y1 = x2 = y2 = None
                             if isinstance(obj.get("box"), (list, tuple)) and len(obj["box"]) == 4:
@@ -966,51 +1036,71 @@ class TrackedObjectProcessor(threading.Thread):
 
                             if None not in (x1, y1, x2, y2):
                                 x1, y1, x2, y2 = map(int, (x1, y1, x2, y2))
-                                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                # Show only seconds component of frame_time and track id
+                                label = obj.get("label")
+                                if label is None and isinstance(obj.get("obj_data"), dict):
+                                    label = obj["obj_data"].get("label")
+                                if label is None:
+                                    label = "person"
+                                score = obj.get("score")
+                                if score is None:
+                                    score = obj.get("confidence")
+                                if score is None:
+                                    score = obj.get("conf")
+                                if score is None and isinstance(obj.get("obj_data"), dict):
+                                    score = obj["obj_data"].get("score")
+                                conf_txt = None
                                 try:
-                                    import time as _time
-                                    sec = _time.strftime('%S', _time.localtime(frame_time))
+                                    if score is not None:
+                                        conf_txt = f"{int(float(score) * 100)}"
                                 except Exception:
-                                    sec = f"{int(frame_time)%60:02d}"
-                                text = f"{sec}s  #{tid}" if tid is not None else f"{sec}s"
-                                org = (x1, max(12, y1 - 8))
+                                    conf_txt = None
+                                parts = []
+                                if conf_txt:
+                                    parts.append(conf_txt)
+                                parts.append(f"{sec}s")
+                                if tid is not None:
+                                    parts.append(str(tid))
+                                text = f"{label}: " + ", ".join(parts)
+
+                                bbox_color = (0, 120, 0)
+                                cv2.rectangle(annotated, (x1, y1), (x2, y2), bbox_color, 2)
+
                                 font = cv2.FONT_HERSHEY_SIMPLEX
-                                font_scale = 0.7
+                                font_scale = 0.6
                                 thickness = 2
-                                color_blue_dark = (180, 0, 0)  # BGR: dark-ish blue
-                                # Draw black outline for visibility
-                                cv2.putText(annotated, text, org, font, font_scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
-                                # Draw main dark blue text
-                                cv2.putText(annotated, text, org, font, font_scale, color_blue_dark, thickness, cv2.LINE_AA)
-                        # Also draw face detections to ensure face-only frames are annotated
-                        face_extra = getattr(self, "_pending_face_detections", None)
-                        if face_extra:
-                            try:
-                                for fobj in face_extra:
-                                    fx1 = fobj.get("x1"); fy1 = fobj.get("y1"); fx2 = fobj.get("x2"); fy2 = fobj.get("y2")
-                                    if None in (fx1, fy1, fx2, fy2):
-                                        continue
-                                    fx1, fy1, fx2, fy2 = map(int, (fx1, fy1, fx2, fy2))
-                                    cv2.rectangle(annotated, (fx1, fy1), (fx2, fy2), (0, 255, 255), 2)  # yellow box
-                                    # seconds text only (track id association optional)
-                                    try:
-                                        import time as _time
-                                        sec = _time.strftime('%S', _time.localtime(frame_time))
-                                    except Exception:
-                                        sec = f"{int(frame_time)%60:02d}"
-                                    ftext = f"{sec}s"
-                                    forg = (fx1, max(12, fy1 - 8))
-                                    cv2.putText(annotated, ftext, forg, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
-                                    cv2.putText(annotated, ftext, forg, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 140, 255), 2, cv2.LINE_AA)
-                            except Exception:
-                                pass
-                        out_name = f"{camera}-{frame_time:.6f}-annotated.jpg"
-                        out_path = os.path.join(self._clips_output_dir, out_name)
-                        try:
-                            cv2.imwrite(out_path, annotated)
-                        except Exception:
-                            pass
+                                pad = 3
+
+                                (tw, th), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                                ih, iw = annotated.shape[:2]
+                                rect_left = max(0, x1)
+                                rect_right = min(iw - 1, x1 + tw + pad * 2)
+
+                                if y1 - (th + baseline + pad * 2) >= 0:
+                                    rect_top = y1 - (th + baseline + pad * 2)
+                                    rect_bottom = y1
+                                    text_y = y1 - pad - baseline
+                                else:
+                                    rect_top = y1
+                                    rect_bottom = min(ih - 1, y1 + th + baseline + pad * 2)
+                                    text_y = rect_top + th + pad
+
+                                cv2.rectangle(
+                                    annotated,
+                                    (rect_left, rect_top),
+                                    (rect_right, rect_bottom),
+                                    bbox_color,
+                                    -1,
+                                )
+                                cv2.putText(
+                                    annotated,
+                                    text,
+                                    (rect_left + pad, text_y),
+                                    font,
+                                    font_scale,
+                                    (0, 0, 0),
+                                    thickness,
+                                    cv2.LINE_AA,
+                                )
                     except Exception:
                         pass
 

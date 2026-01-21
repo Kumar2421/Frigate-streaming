@@ -883,10 +883,15 @@ def event_snapshot(
                 status_code=404,
             )
         # read snapshot from disk
-        with open(
-            os.path.join(CLIPS_DIR, f"{event.camera}-{event.id}.jpg"), "rb"
-        ) as image_file:
-            jpg_bytes = image_file.read()
+        face_snapshot_path = os.path.join(CLIPS_DIR, "faces", f"{event.camera}-{event.id}.jpg")
+        if event.label == "face" and os.path.exists(face_snapshot_path):
+            with open(face_snapshot_path, "rb") as image_file:
+                jpg_bytes = image_file.read()
+        else:
+            with open(
+                os.path.join(CLIPS_DIR, f"{event.camera}-{event.id}.jpg"), "rb"
+            ) as image_file:
+                jpg_bytes = image_file.read()
     except DoesNotExist:
         # see if the object is currently being tracked
         try:

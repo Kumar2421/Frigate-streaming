@@ -16,6 +16,8 @@ services:
       # Mount your config directory (rw for config migrations)
       # Note: Database and model_cache use separate volumes to avoid Windows filesystem issues
       - ./config:/config:rw
+      # # Dev: bind-mount python source so small code changes only need restart (no rebuild)
+      # - ./frigate:/opt/frigate/frigate:rw
       # Use named volume for database (avoids SQLite I/O errors on Windows filesystems)
       - frigate_db:/db
       # Mount storage for recordings, clips, etc.

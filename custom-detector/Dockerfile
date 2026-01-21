@@ -65,6 +65,14 @@ RUN pip3 install \
     psutil \
     --break-system-packages
 
+# Install optional audio transcription dependencies
+RUN pip3 install \
+    faster-whisper \
+    librosa \
+    soundfile \
+    sherpa-onnx \
+    --break-system-packages
+
 # Install Ultralytics for YOLOv8/YOLO models (.pt)
 RUN pip3 install ultralytics --break-system-packages
 
@@ -128,7 +136,7 @@ RUN cp -r dist/* /opt/frigate/web/
 
 # Copy enhanced entrypoint script
 COPY custom-detector/entrypoint.sh /opt/frigate/entrypoint.sh
-RUN chmod +x /opt/frigate/entrypoint.sh
+RUN chmod +x /opt/frigate/entrypoint.sh && sed -i 's/\r$//' /opt/frigate/entrypoint.sh
 
 # Set working directory
 WORKDIR /opt/frigate

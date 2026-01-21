@@ -10,6 +10,10 @@ model:
   path: /config/yolov8n_opset21.onnx
 mqtt:
   enabled: false
+face_recognition:
+  enabled: false
+semantic_search:
+  enabled: false
 logger:
   default: warning
   logs:
@@ -57,35 +61,35 @@ cameras:
         loitering_time: 0
         objects:
         - person
-  exit:
-    enabled: true
-    ffmpeg:
-      input_args:
-        - -re
-        - -stream_loop
-        - "-1"
-      inputs:
-        - path: /media/frigate/testinput/57.27.mp4
-          roles:
-          - detect
-          # - record
-    detect:
-      enabled: true
-      width: 1280
-      height: 720
-    objects:
-      track:
-      - person
-      filters:
-        person:
-          min_area: 5000
-          max_area: 100000
-          min_score: 0.5
-          threshold: 0.7
-    motion:
-      threshold: 50
-      contour_area: 10
-      improve_contrast: true
+  # exit:
+  #   enabled: true
+  #   ffmpeg:
+  #     input_args:
+  #       - -re
+  #       - -stream_loop
+  #       - "-1"
+  #     inputs:
+  #       - path: /media/frigate/testinput/57.27.mp4
+  #         roles:
+  #         - detect
+  #         # - record
+  #   detect:
+  #     enabled: true
+  #     width: 1280
+  #     height: 720
+  #   objects:
+  #     track:
+  #     - person
+  #     filters:
+  #       person:
+  #         min_area: 5000
+  #         max_area: 100000
+  #         min_score: 0.5
+  #         threshold: 0.7
+  #   motion:
+  #     threshold: 50
+  #     contour_area: 10
+  #     improve_contrast: true
   # em-dept-rightexit:
   #   enabled: true
   #   ffmpeg:
@@ -148,8 +152,6 @@ camera_groups:
     icon: LuActivity
     cameras:
     - entry
-semantic_search:
-  enabled: false
 detectors:
   onnx:
     type: onnx

@@ -30,7 +30,7 @@ class CameraMetrics:
         self.audio_rms = manager.Value("d", 0)
         self.audio_dBFS = manager.Value("d", 0)
 
-        self.frame_queue = manager.Queue(maxsize=2)
+        self.frame_queue = manager.Queue(maxsize=50)
 
         self.process_pid = manager.Value("i", 0)
         self.capture_process_pid = manager.Value("i", 0)

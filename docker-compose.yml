@@ -45,6 +45,18 @@ services:
     environment:
       # Set timezone (adjust to your location)
       - TZ=Asia/Kolkata
+      - SHM_MAX_FRAMES=300
+      - YOLO_SCORE_THRESHOLD=0.25
+      - YOLO_NMS_THRESHOLD=0.4
+      - DETECTION_DEBUG=0
+      - DETECTION_DEBUG_EVERY_N=30
+      - OBJECT_PROCESSING_DEBUG=1
+      - OBJECT_PROCESSING_DEBUG_EVERY_N=30
+      - MODEL_DEBUG=0
+      - MODEL_DEBUG_EVERY_N=5
+      - OBJECT_DEBUG=0
+      - OBJECT_DEBUG_EVERY_N=5
+      - OBJECT_DEBUG_SAMPLE=5
       # RTSP password for go2rtc
       - FRIGATE_RTSP_PASSWORD=password
       # Optional: Set config directory
@@ -55,6 +67,9 @@ services:
       # Face detection model configuration (secondary detector)
       - FACE_MODEL_PATH=/config/yolov8n-face-lindevs.pt
       - FACE_THRESHOLD=0.25
+      - PERSON_MODEL_PATH=/config/yolov8n.pt
+      - PERSON_THRESHOLD=0.35
+      - PERSON_ALWAYS_RUN=1
       # Save directory for YOLO annotated frames (inside container and mapped to host)
       - YOLO_SAVE_DIR=/config/yolo
       - FACE_ALWAYS_RUN=0
@@ -62,6 +77,8 @@ services:
       # Draw DeepSORT IDs and boxes on saved clip images
       - DRAW_CLIP_OVERLAYS=1
       - CLIPS_OUTPUT_DIR=/media/frigate/clips
+      - FIRST_PERSON_OUTPUT_DIR=/media/frigate/clips/first-person
+      - FIRST_FACE_OUTPUT_DIR=/media/frigate/clips/first-face
     # Optional: For hardware acceleration (if you have compatible GPU)
     # devices:
     #   - /dev/dri/renderD128  # Intel GPU

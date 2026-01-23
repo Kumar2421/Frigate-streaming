@@ -121,7 +121,11 @@ def escape_special_characters(path: str) -> str:
     try:
         found = re.search(REGEX_RTSP_CAMERA_USER_PASS, path).group(0)[3:-1]
         pw = found[(found.index(":") + 1) :]
-        return path.replace(pw, urllib.parse.quote_plus(pw))
+        # If the password is already percent-encoded (common for '@' as '%40'),
+        # encoding again will break authentication (e.g. '%40' -> '%2540').
+        if re.search(r"%[0-9A-Fa-f]{2}", pw):
+            return path
+        return path.replace(pw, urllib.parse.quote(pw, safe=""))
     except AttributeError:
         # path does not have user:pass
         return path

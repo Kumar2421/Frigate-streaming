@@ -3,6 +3,7 @@
 import datetime
 import logging
 import math
+import os
 from collections import defaultdict
 from typing import Any
 
@@ -31,6 +32,50 @@ from frigate.util.image import (
 )
 
 logger = logging.getLogger(__name__)
+
+_OBJECT_DEBUG_COUNTER = 0
+_OBJECT_DEBUG_IMPORT_LOGGED = False
+
+
+def _object_debug_enabled() -> bool:
+    try:
+        return os.environ.get("OBJECT_DEBUG", "0") in ("1", "true", "True")
+    except Exception:
+        return False
+
+
+def _object_debug_should_log() -> bool:
+    global _OBJECT_DEBUG_COUNTER
+    global _OBJECT_DEBUG_IMPORT_LOGGED
+    if not _object_debug_enabled():
+        return False
+
+    if not _OBJECT_DEBUG_IMPORT_LOGGED:
+        _OBJECT_DEBUG_IMPORT_LOGGED = True
+        try:
+            logger.warning(
+                "Object debug enabled: OBJECT_DEBUG_EVERY_N=%s OBJECT_DEBUG_SAMPLE=%s",
+                os.environ.get("OBJECT_DEBUG_EVERY_N"),
+                os.environ.get("OBJECT_DEBUG_SAMPLE"),
+            )
+        except Exception:
+            pass
+
+    try:
+        every_n = int(os.environ.get("OBJECT_DEBUG_EVERY_N", "30"))
+    except Exception:
+        every_n = 30
+    if every_n <= 1:
+        return True
+    _OBJECT_DEBUG_COUNTER += 1
+    return (_OBJECT_DEBUG_COUNTER % every_n) == 0
+
+
+def _object_debug_sample_limit() -> int:
+    try:
+        return int(os.environ.get("OBJECT_DEBUG_SAMPLE", "3"))
+    except Exception:
+        return 3
 
 GRID_SIZE = 8
 
@@ -100,6 +145,16 @@ def get_camera_regions_grid(
 
         x_pos = int(x * GRID_SIZE)
         y_pos = int(y * GRID_SIZE)
+
+        if x_pos < 0:
+            x_pos = 0
+        elif x_pos >= GRID_SIZE:
+            x_pos = GRID_SIZE - 1
+
+        if y_pos < 0:
+            y_pos = 0
+        elif y_pos >= GRID_SIZE:
+            y_pos = GRID_SIZE - 1
 
         calculated_region = calculate_region(
             (height, width),
@@ -180,6 +235,16 @@ def get_region_from_grid(
     grid_x = int(centroid[0] / frame_shape[1] * GRID_SIZE)
     grid_y = int(centroid[1] / frame_shape[0] * GRID_SIZE)
 
+    if grid_x < 0:
+        grid_x = 0
+    elif grid_x >= GRID_SIZE:
+        grid_x = GRID_SIZE - 1
+
+    if grid_y < 0:
+        grid_y = 0
+    elif grid_y >= GRID_SIZE:
+        grid_y = GRID_SIZE - 1
+
     cell = region_grid[grid_x][grid_y]
 
     # if there is no known data, use original region calculation
@@ -220,7 +285,40 @@ def is_object_filtered(obj, objects_to_track, object_filters):
     object_area = obj[3]
     object_ratio = obj[4]
 
+    if _object_debug_should_log():
+        try:
+            if not hasattr(is_object_filtered, "_debug_samples"):
+                is_object_filtered._debug_samples = 0  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+    def _log_reject(reason: str) -> None:
+        if not _object_debug_should_log():
+            return
+        try:
+            limit = _object_debug_sample_limit()
+            samples = getattr(is_object_filtered, "_debug_samples", 0)
+            if samples >= limit:
+                return
+            setattr(is_object_filtered, "_debug_samples", samples + 1)
+        except Exception:
+            return
+        try:
+            logger.warning(
+                "Filter reject: reason=%s label=%s score=%.3f area=%s ratio=%.3f box=%s track=%s",
+                reason,
+                str(object_name),
+                float(object_score) if object_score is not None else -1.0,
+                float(object_area) if object_area is not None else -1.0,
+                float(object_ratio) if object_ratio is not None else -1.0,
+                object_box,
+                list(objects_to_track) if objects_to_track is not None else None,
+            )
+        except Exception:
+            pass
+
     if object_name not in objects_to_track:
+        _log_reject("label_not_tracked")
         return True
 
     if object_name in object_filters:
@@ -229,23 +327,28 @@ def is_object_filtered(obj, objects_to_track, object_filters):
         # if the min area is larger than the
         # detected object, don't add it to detected objects
         if obj_settings.min_area > object_area:
+            _log_reject("min_area")
             return True
 
         # if the detected object is larger than the
         # max area, don't add it to detected objects
         if obj_settings.max_area < object_area:
+            _log_reject("max_area")
             return True
 
         # if the score is lower than the min_score, skip
         if obj_settings.min_score > object_score:
+            _log_reject("min_score")
             return True
 
         # if the object is not proportionally wide enough
         if obj_settings.min_ratio > object_ratio:
+            _log_reject("min_ratio")
             return True
 
         # if the object is proportionally too wide
         if obj_settings.max_ratio < object_ratio:
+            _log_reject("max_ratio")
             return True
 
         if obj_settings.mask is not None:
@@ -262,6 +365,7 @@ def is_object_filtered(obj, objects_to_track, object_filters):
 
             # if the object is in a masked location, don't add it to detected objects
             if obj_settings.mask[y_location][x_location] == 0:
+                _log_reject("mask")
                 return True
 
     return False
@@ -484,6 +588,22 @@ def reduce_detections(
     frame_shape: tuple[int, int],
     all_detections: list[tuple[Any]],
 ) -> list[tuple[Any]]:
+    if _object_debug_should_log():
+        try:
+            in_counts: dict[str, int] = {}
+            for d in all_detections:
+                try:
+                    k = str(d[0])
+                except Exception:
+                    k = "unknown"
+                in_counts[k] = in_counts.get(k, 0) + 1
+            logger.warning(
+                "Reduce debug: input=%s labels=%s",
+                len(all_detections),
+                dict(sorted(in_counts.items(), key=lambda kv: kv[1], reverse=True)[:10]),
+            )
+        except Exception:
+            pass
     """Take a list of detections and reduce overlaps to create a list of confident detections."""
 
     def reduce_overlapping_detections(detections: list[tuple[Any]]) -> list[tuple[Any]]:
@@ -574,6 +694,25 @@ def reduce_detections(
 
         return consolidated_detections
 
-    return get_consolidated_object_detections(
+    consolidated = get_consolidated_object_detections(
         reduce_overlapping_detections(all_detections)
     )
+
+    if _object_debug_should_log():
+        try:
+            out_counts: dict[str, int] = {}
+            for d in consolidated:
+                try:
+                    k = str(d[0])
+                except Exception:
+                    k = "unknown"
+                out_counts[k] = out_counts.get(k, 0) + 1
+            logger.warning(
+                "Reduce debug: output=%s labels=%s",
+                len(consolidated),
+                dict(sorted(out_counts.items(), key=lambda kv: kv[1], reverse=True)[:10]),
+            )
+        except Exception:
+            pass
+
+    return consolidated

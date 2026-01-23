@@ -32,6 +32,14 @@ fi
 # Ensure /media/frigate is writable
 chmod 755 /media/frigate 2>/dev/null || true
 
+# Ensure clips directory structure exists (UI thumbnails/review, snapshots, custom crops)
+mkdir -p /media/frigate/clips /media/frigate/clips/review /media/frigate/clips/thumbs /media/frigate/clips/faces /media/frigate/clips/person /media/frigate/clips/previews 2>/dev/null || true
+chmod 777 /media/frigate/clips /media/frigate/clips/review /media/frigate/clips/thumbs /media/frigate/clips/faces /media/frigate/clips/person /media/frigate/clips/previews 2>/dev/null || true
+
+# Ensure legacy output folders exist (host expects ./input/person and ./input/faces)
+mkdir -p /media/frigate/person /media/frigate/faces 2>/dev/null || true
+chmod 777 /media/frigate/person /media/frigate/faces 2>/dev/null || true
+
 # Initialize config file if it doesn't exist
 CONFIG_FILE="/config/config.yml"
 if [ ! -f "$CONFIG_FILE" ] && [ ! -f "/config/config.yaml" ]; then

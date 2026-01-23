@@ -35,12 +35,14 @@ from frigate.api.defs.tags import Tags
 from frigate.camera.state import CameraState
 from frigate.config import FrigateConfig
 from frigate.const import (
-    CACHE_DIR,
+    BASE_DIR,
     CLIPS_DIR,
+    EXPORT_DIR,
     INSTALL_DIR,
     MAX_SEGMENT_DURATION,
     PREVIEW_FRAME_TYPE,
     RECORD_DIR,
+    THUMB_DIR
 )
 from frigate.models import Event, Previews, Recordings, Regions, ReviewSegment
 from frigate.track.object_processing import TrackedObjectProcessor
@@ -52,6 +54,58 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter(tags=[Tags.media])
+
+
+@router.get(
+    "/reid/{camera_name}/{reid_id}/person.jpg",
+    description="Returns the latest saved person crop for a given camera and reid_id.",
+)
+def reid_person_crop(camera_name: str, reid_id: str):
+    crop_path = os.path.join(BASE_DIR, "person", f"{camera_name}-{reid_id}.jpg")
+    if not os.path.exists(crop_path):
+        return JSONResponse(
+            content={"success": False, "message": "Person crop not found"},
+            status_code=404,
+        )
+    try:
+        with open(crop_path, "rb") as image_file:
+            jpg_bytes = image_file.read()
+    except Exception:
+        return JSONResponse(
+            content={"success": False, "message": "Unable to read person crop"},
+            status_code=404,
+        )
+    return Response(
+        jpg_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get(
+    "/reid/{camera_name}/{reid_id}/face.jpg",
+    description="Returns the latest saved face crop for a given camera and reid_id.",
+)
+def reid_face_crop(camera_name: str, reid_id: str):
+    crop_path = os.path.join(BASE_DIR, "faces", f"{camera_name}-{reid_id}.jpg")
+    if not os.path.exists(crop_path):
+        return JSONResponse(
+            content={"success": False, "message": "Face crop not found"},
+            status_code=404,
+        )
+    try:
+        with open(crop_path, "rb") as image_file:
+            jpg_bytes = image_file.read()
+    except Exception:
+        return JSONResponse(
+            content={"success": False, "message": "Unable to read face crop"},
+            status_code=404,
+        )
+    return Response(
+        jpg_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/{camera_name}")

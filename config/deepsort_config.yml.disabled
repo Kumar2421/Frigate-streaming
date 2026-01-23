@@ -27,33 +27,14 @@ deepsort:
 
 # Camera-specific tracking settings
 cameras:
-  em-dept-exit:
+  entry:
     tracking:
       use_deepsort: true
       max_age: 30
       n_init: 3
       motion_enhancement: true
       
-  em-dept-entry:
-    tracking:
-      use_deepsort: true
-      max_age: 25
-      n_init: 2
-      motion_enhancement: true
-      
-  em-dept-rightexit:
-    tracking:
-      use_deepsort: true
-      max_age: 35
-      n_init: 4
-      motion_enhancement: true
-      
-  em-dept-sideexit:
-    tracking:
-      use_deepsort: true
-      max_age: 30
-      n_init: 3
-      motion_enhancement: true
+ 
 
 # Advanced tracking features
 advanced_tracking:

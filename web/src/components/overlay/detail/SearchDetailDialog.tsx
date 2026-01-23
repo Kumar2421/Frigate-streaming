@@ -27,7 +27,6 @@ import ActivityIndicator from "@/components/indicators/activity-indicator";
 import {
   FaArrowRight,
   FaCheckCircle,
-  FaChevronDown,
   FaDownload,
   FaHistory,
   FaImage,
@@ -51,14 +50,7 @@ import {
 import { REVIEW_PADDING, ReviewSegment } from "@/types/review";
 import { useNavigate } from "react-router-dom";
 import Chip from "@/components/indicators/Chip";
-import { capitalizeAll } from "@/utils/stringUtil";
 import useGlobalMutation from "@/hooks/use-global-mutate";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import { Card, CardContent } from "@/components/ui/card";
 import useImageLoaded from "@/hooks/use-image-loaded";
@@ -94,14 +86,8 @@ type SearchDetailDialogProps = {
   setSimilarity?: () => void;
   setInputFocused: React.Dispatch<React.SetStateAction<boolean>>;
 };
-export default function SearchDetailDialog({
-  search,
-  page,
-  setSearch,
-  setSearchPage,
-  setSimilarity,
-  setInputFocused,
-}: SearchDetailDialogProps) {
+export default function SearchDetailDialog(props: SearchDetailDialogProps) {
+  const { search, page, setSearch, setSearchPage, setInputFocused } = props;
   const { t } = useTranslation(["views/explore", "views/faceLibrary"]);
   const { data: config } = useSWR<FrigateConfig>("config", {
     revalidateOnFocus: false,
@@ -247,7 +233,6 @@ export default function SearchDetailDialog({
             search={search}
             config={config}
             setSearch={setSearch}
-            setSimilarity={setSimilarity}
             setInputFocused={setInputFocused}
           />
         )}
@@ -277,14 +262,12 @@ type ObjectDetailsTabProps = {
   search: SearchResult;
   config?: FrigateConfig;
   setSearch: (search: SearchResult | undefined) => void;
-  setSimilarity?: () => void;
   setInputFocused: React.Dispatch<React.SetStateAction<boolean>>;
 };
 function ObjectDetailsTab({
   search,
   config,
   setSearch,
-  setSimilarity,
   setInputFocused,
 }: ObjectDetailsTabProps) {
   const { t } = useTranslation(["views/explore", "views/faceLibrary"]);
@@ -454,50 +437,6 @@ function ObjectDetailsTab({
         setDesc(search.data.description);
       });
   }, [desc, search, mutate, t]);
-
-  const regenerateDescription = useCallback(
-    (source: "snapshot" | "thumbnails") => {
-      if (!search) {
-        return;
-      }
-
-      axios
-        .put(`events/${search.id}/description/regenerate?source=${source}`)
-        .then((resp) => {
-          if (resp.status == 200) {
-            toast.success(
-              t("details.item.toast.success.regenerate", {
-                provider: capitalizeAll(
-                  config?.genai.provider.replaceAll("_", " ") ??
-                  t("generativeAI"),
-                ),
-              }),
-              {
-                position: "top-center",
-                duration: 7000,
-              },
-            );
-          }
-        })
-        .catch((error) => {
-          const errorMessage =
-            error.response?.data?.message ||
-            error.response?.data?.detail ||
-            "Unknown error";
-          toast.error(
-            t("details.item.toast.error.regenerate", {
-              provider: capitalizeAll(
-                config?.genai.provider.replaceAll("_", " ") ??
-                t("generativeAI"),
-              ),
-              errorMessage,
-            }),
-            { position: "top-center" },
-          );
-        });
-    },
-    [search, config, t],
-  );
 
   const handleSubLabelSave = useCallback(
     (text: string) => {
@@ -876,6 +815,8 @@ export function ObjectSnapshotTab({
 
   const [imgRef, imgLoaded, onImgLoad] = useImageLoaded();
 
+  const reidId = search?.data?.reid_id;
+
   // upload
 
   const [state, setState] = useState<SubmissionState>(
@@ -925,12 +866,12 @@ export function ObjectSnapshotTab({
                 height: "100%",
               }}
             >
-              {search?.id && (
+              {search?.id && reidId && (
                 <div className="relative mx-auto">
                   <img
                     ref={imgRef}
                     className={`mx-auto max-h-[60dvh] bg-black object-contain`}
-                    src={`${baseUrl}api/events/${search?.id}/snapshot.jpg`}
+                    src={`${baseUrl}api/reid/${search?.camera}/${reidId}/person.jpg`}
                     alt={`${search?.label}`}
                     loading={isSafari ? "eager" : "lazy"}
                     onLoad={() => {
@@ -945,7 +886,7 @@ export function ObjectSnapshotTab({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <a
-                          href={`${baseUrl}api/events/${search?.id}/snapshot.jpg?bbox=1`}
+                          href={`${baseUrl}api/reid/${search?.camera}/${reidId}/person.jpg`}
                           download={`${search?.camera}_${search?.label}.jpg`}
                         >
                           <Chip className="cursor-pointer rounded-md bg-gray-500 bg-gradient-to-br from-gray-400 to-gray-500">
@@ -963,6 +904,16 @@ export function ObjectSnapshotTab({
                 </div>
               )}
             </TransformComponent>
+            {search?.id && reidId && (
+              <div className="relative mx-auto">
+                <img
+                  className={`mx-auto max-h-[60dvh] bg-black object-contain`}
+                  src={`${baseUrl}api/reid/${search?.camera}/${reidId}/face.jpg`}
+                  alt={`${search?.label}`}
+                  loading={isSafari ? "eager" : "lazy"}
+                />
+              </div>
+            )}
             {search.data.type == "object" &&
               search.plus_id !== "not_enabled" &&
               search.end_time &&

@@ -60,8 +60,52 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=[Tags.events])
 
 
+def _enrich_event_with_reid_id(request: Request | None, event_dict: dict[str, Any]) -> dict[str, Any]:
+    if request is None:
+        return event_dict
+    try:
+        processor = getattr(request.app, "detected_frames_processor", None)
+        if processor is None:
+            return event_dict
+        camera_states = getattr(processor, "camera_states", None)
+        if not isinstance(camera_states, dict):
+            return event_dict
+
+        event_id = event_dict.get("id")
+        camera = event_dict.get("camera")
+        if not event_id or not camera:
+            return event_dict
+
+        camera_state = camera_states.get(camera)
+        if camera_state is None:
+            return event_dict
+
+        tracked_obj = camera_state.tracked_objects.get(event_id)
+        if tracked_obj is None:
+            return event_dict
+
+        reid_id = None
+        try:
+            reid_id = tracked_obj.obj_data.get("reid_id")
+        except Exception:
+            reid_id = None
+
+        if not reid_id:
+            return event_dict
+
+        data = event_dict.get("data")
+        if not isinstance(data, dict):
+            data = {}
+            event_dict["data"] = data
+        data["reid_id"] = reid_id
+    except Exception:
+        return event_dict
+
+    return event_dict
+
+
 @router.get("/events", response_model=list[EventResponse])
-def events(params: EventsQueryParams = Depends()):
+def events(request: Request, params: EventsQueryParams = Depends()):
     camera = params.camera
     cameras = params.cameras
 
@@ -317,11 +361,11 @@ def events(params: EventsQueryParams = Depends()):
         .iterator()
     )
 
-    return JSONResponse(content=list(events))
+    return JSONResponse(content=[_enrich_event_with_reid_id(request, e) for e in events])
 
 
 @router.get("/events/explore", response_model=list[EventResponse])
-def events_explore(limit: int = 10):
+def events_explore(request: Request, limit: int = 10):
     # get distinct labels for all events
     distinct_labels = Event.select(Event.label).distinct().order_by(Event.label)
 
@@ -390,11 +434,13 @@ def events_explore(limit: int = 10):
         reverse=True,
     )
 
-    return JSONResponse(content=processed_events)
+    return JSONResponse(
+        content=[_enrich_event_with_reid_id(request, e) for e in processed_events]
+    )
 
 
 @router.get("/event_ids", response_model=list[EventResponse])
-def event_ids(ids: str):
+def event_ids(request: Request, ids: str):
     ids = ids.split(",")
 
     if not ids:
@@ -405,7 +451,7 @@ def event_ids(ids: str):
 
     try:
         events = Event.select().where(Event.id << ids).dicts().iterator()
-        return JSONResponse(list(events))
+        return JSONResponse([_enrich_event_with_reid_id(request, e) for e in events])
     except Exception:
         return JSONResponse(
             content=({"success": False, "message": "Events not found"}), status_code=400
@@ -786,9 +832,9 @@ def events_summary(params: EventsSummaryQueryParams = Depends()):
 
 
 @router.get("/events/{event_id}", response_model=EventResponse)
-def event(event_id: str):
+def event(request: Request, event_id: str):
     try:
-        return model_to_dict(Event.get(Event.id == event_id))
+        return _enrich_event_with_reid_id(request, model_to_dict(Event.get(Event.id == event_id)))
     except DoesNotExist:
         return JSONResponse(content="Event not found", status_code=404)
 

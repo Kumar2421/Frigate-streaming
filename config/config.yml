@@ -6,7 +6,7 @@ model:
   height: 640
   input_tensor: nchw
   input_dtype: float
-  input_pixel_format: bgr
+  input_pixel_format: rgb
   path: /config/yolov8n_opset21.onnx
 mqtt:
   enabled: false
@@ -26,6 +26,8 @@ logger:
     frigate.track.object_processing: info
     frigate.track.deepocsort_tracker: error
 
+go2rtc:
+  streams: {}
 cameras:
   entry:
     enabled: true
@@ -34,10 +36,10 @@ cameras:
         - -rtsp_transport
         - tcp
       inputs:
-      - path: rtsp://support:Support@1@115.240.252.217:555/live
-        roles:
-        - detect
-        - record
+        - path: rtsp://admin:Admin@123@121.200.48.187:554/Streaming/Channels/102
+          roles:
+            - detect
+            - record
     detect:
       enabled: true
       width: 1280
@@ -47,72 +49,72 @@ cameras:
       - person
       filters:
         person:
-          min_area: 5000
-          max_area: 100000
-          min_score: 0.5
-          threshold: 0.7
+          min_area: 1500
+          max_area: 1000000
+          min_score: 0.3
+          threshold: 0.5
     motion:
       threshold: 50
       contour_area: 10
       improve_contrast: true
-    zones:
-      Exit-Zone:
-        coordinates: 0.275,0.071,0.745,0.071,0.742,0.998,0.305,1
-        loitering_time: 0
-        objects:
-        - person
   # exit:
   #   enabled: true
   #   ffmpeg:
   #     input_args:
-  #       - -re
   #       - -stream_loop
   #       - "-1"
+  #       - -re
   #     inputs:
-  #       - path: /media/frigate/testinput/57.27.mp4
+  #       - path: /media/frigate/testinput/vlc-record-2026-01-21-17h11m11s-rtsp___121.200.48.182_554_live-.mp4
   #         roles:
-  #         - detect
-  #         # - record
+  #           - detect
+  #           # - record
   #   detect:
   #     enabled: true
   #     width: 1280
   #     height: 720
   #   objects:
   #     track:
-  #     - person
+  #       - person
   #     filters:
   #       person:
-  #         min_area: 5000
-  #         max_area: 100000
-  #         min_score: 0.5
-  #         threshold: 0.7
+  #         min_area: 1500
+  #         max_area: 1000000
+  #         min_score: 0.3
+  #         threshold: 0.5
   #   motion:
   #     threshold: 50
   #     contour_area: 10
   #     improve_contrast: true
-  # em-dept-rightexit:
-  #   enabled: true
-  #   ffmpeg:
-  #     inputs:
-  #     - path: rtsp://admin:abcd@321@121.200.48.187:555/Streaming/Channels/102
-  #       roles:
-  #       - detect
-  #       - record
-  #   detect:
-  #     enabled: false
-  #     width: 1280
-  #     height: 720
-  #   objects:
-  #     track:
-  #     - person
-  #     filters:
-  #       person:
-  #         min_area: 5000
-  #         max_area: 100000
-  #         min_score: 0.5
-  #         threshold: 0.7
-  #   motion:
-  #     mask: 0.023,0.02,0.333,0.018,0.333,0.099,0.016,0.124
+      
+  entry-1:
+    enabled: true
+    ffmpeg:
+      input_args:
+        - -rtsp_transport
+        - tcp
+      inputs:
+        - path: rtsp://support:Support%401@115.240.252.217:555/live
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: true
+      width: 1280
+      height: 720
+    objects:
+      track:
+      - person
+      filters:
+        person:
+          min_area: 1500
+          max_area: 1000000
+          min_score: 0.3
+          threshold: 0.5
+    motion:
+      threshold: 50
+      contour_area: 10
+      improve_contrast: true
   # em-dept-sideexit:
   #   enabled: true
   #   ffmpeg:
@@ -135,7 +137,7 @@ cameras:
   #         min_score: 0.5
   #         threshold: 0.7
 record:
-  enabled: true
+  enabled: false
   retain:
     days: 7
     mode: motion
@@ -152,9 +154,11 @@ camera_groups:
     icon: LuActivity
     cameras:
     - entry
+    # - exit
+    - entry-1
 detectors:
   onnx:
     type: onnx
-    device: AUTO
+    device: auto
 detect:
   enabled: true

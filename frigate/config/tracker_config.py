@@ -11,6 +11,7 @@ class TrackerTypeEnum(str, Enum):
     norfair = "norfair"
     centroid = "centroid"
     deepocsort = "deepocsort"
+    deepsortrealtime = "deepsortrealtime"
 
 
 class DeepOCSORTConfig(BaseModel):
@@ -42,10 +43,30 @@ class DeepOCSORTConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", protected_namespaces=())
 
 
+class DeepSortRealtimeConfig(BaseModel):
+    """DeepSort Realtime tracker configuration."""
+
+    max_age: int = Field(default=30, title="Maximum age for tracks")
+    n_init: int = Field(default=3, title="Minimum hits for track initialization")
+    max_iou_distance: float = Field(default=0.7, title="Maximum IoU distance")
+    max_cosine_distance: float = Field(default=0.2, title="Maximum cosine distance")
+    nn_budget: int = Field(default=100, title="Nearest-neighbor budget")
+
+    # ReID model parameters (used by Frigate's ReIDExtractor)
+    reid_model_path: str = Field(default="osnet_x1_0", title="ReID model name or path")
+    reid_device: str = Field(default="cpu", title="Device for re-identification model")
+    reid_threshold: float = Field(default=0.7, title="Re-identification similarity threshold")
+
+    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+
+
 class TrackerConfig(BaseModel):
     """Main tracker configuration."""
     
     type: TrackerTypeEnum = Field(default=TrackerTypeEnum.norfair, title="Tracker type")
     deepocsort: Optional[DeepOCSORTConfig] = Field(default=None, title="DeepOCSORT configuration")
+    deepsortrealtime: Optional[DeepSortRealtimeConfig] = Field(
+        default=None, title="DeepSort Realtime configuration"
+    )
     
     model_config = ConfigDict(extra="forbid", protected_namespaces=())

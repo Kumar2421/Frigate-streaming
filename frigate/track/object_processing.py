@@ -55,7 +55,9 @@ from frigate.events.types import EventStateEnum, EventTypeEnum
 from frigate.models import Event, ReviewSegment, Timeline
 from frigate.ptz.autotrack import PtzAutoTrackerThread
 from frigate.track.tracked_object import TrackedObject
-from frigate.util.image import SharedMemoryFrameManager
+from frigate.util.image import SharedMemoryFrameManager, calculate_region
+from frigate.const import BASE_DIR
+from frigate.camera import PTZMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -84,31 +86,46 @@ class TrackedObjectProcessor(threading.Thread):
         self.frame_manager = SharedMemoryFrameManager()
         self.last_motion_detected: dict[str, float] = {}
         self.ptz_autotracker_thread = ptz_autotracker_thread
-        # Directory to save YOLO annotated frames (optional)
-        self._yolo_save_dir = os.environ.get("YOLO_SAVE_DIR", "/media/frigate/yolo")
-        try:
-            os.makedirs(self._yolo_save_dir, exist_ok=True)
-        except Exception:
-            # Fallback to /tmp if media is not writable
-            self._yolo_save_dir = "/tmp/Ultralytics"
-            os.makedirs(self._yolo_save_dir, exist_ok=True)
         # Testing flags to bypass person gating
         self._fire_always_run = os.environ.get("FIRE_ALWAYS_RUN", "0") in ("1", "true", "True")
         self._face_always_run = os.environ.get("FACE_ALWAYS_RUN", "0") in ("1", "true", "True")
-        # Optional overlay for clips
+        # Optional overlay
         self._draw_clip_overlays = os.environ.get("DRAW_CLIP_OVERLAYS", "0") in ("1", "true", "True")
-        self._clips_output_dir = os.environ.get("CLIPS_OUTPUT_DIR", "/media/frigate/clips")
-        try:
-            os.makedirs(self._clips_output_dir, exist_ok=True)
-        except Exception:
-            pass
-        self._face_output_dir = os.environ.get(
-            "FACE_OUTPUT_DIR", os.path.join(self._clips_output_dir, "faces")
+
+        self._person_output_dir = os.environ.get(
+            "FIRST_PERSON_OUTPUT_DIR", os.path.join(BASE_DIR, "clips", "first-person")
         )
         try:
-            os.makedirs(self._face_output_dir, exist_ok=True)
+            os.makedirs(self._person_output_dir, exist_ok=True)
         except Exception:
             pass
+        self._face_crop_output_dir = os.environ.get(
+            "FIRST_FACE_OUTPUT_DIR", os.path.join(BASE_DIR, "clips", "first-face")
+        )
+        try:
+            os.makedirs(self._face_crop_output_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        self._best_person_min_score = float(os.environ.get("PERSON_CROP_MIN_SCORE", "0.8"))
+        self._best_face_min_score = float(os.environ.get("FACE_CROP_MIN_SCORE", "0.8"))
+
+        # Crop filename behavior
+        # - If enabled, saved crops include a timestamp suffix so they won't overwrite.
+        # - For "best", this allows you to keep a history of improvements over time.
+        self._crop_add_timestamp = os.environ.get("CROP_ADD_TIMESTAMP", "1") in (
+            "1",
+            "true",
+            "True",
+        )
+        self._crop_save_best_history = os.environ.get("CROP_SAVE_BEST_HISTORY", "1") in (
+            "1",
+            "true",
+            "True",
+        )
+
+        self._first_saved: dict[str, set[tuple[str, str]]] = defaultdict(set)
+        self._best_saved: dict[str, dict[tuple[str, str], float]] = defaultdict(dict)
         self._display_track_id_map = defaultdict(dict)
         self._display_track_next = defaultdict(lambda: 1)
         # Optional fire detector configuration via environment
@@ -123,6 +140,49 @@ class TrackedObjectProcessor(threading.Thread):
             except Exception as e:
                 logger.warning(f"Failed to load fire model at {fire_model_path}: {e}")
 
+        self._person_model = None
+        self._person_threshold = float(os.environ.get("PERSON_THRESHOLD", "0.5"))
+        self._person_infer_failures = 0
+        try:
+            self._person_infer_max_failures = int(
+                os.environ.get("PERSON_MODEL_MAX_FAILURES", "3")
+            )
+        except Exception:
+            self._person_infer_max_failures = 3
+        person_model_path = os.environ.get("PERSON_MODEL_PATH")
+        try:
+            person_model_path = person_model_path.strip() if person_model_path else person_model_path
+        except Exception:
+            pass
+        try:
+            logger.info(
+                f"Person model init: PERSON_MODEL_PATH={repr(person_model_path)}, exists={bool(person_model_path and os.path.exists(person_model_path))}"
+            )
+        except Exception:
+            pass
+        if person_model_path and os.path.exists(person_model_path):
+            try:
+                from ultralytics import YOLO  # type: ignore
+
+                device: str | int = "cpu"
+                use_half = False
+                try:
+                    import torch  # type: ignore
+
+                    if bool(getattr(torch, "cuda", None)) and torch.cuda.is_available():
+                        device = 0
+                        use_half = True
+                except Exception:
+                    device = "cpu"
+                    use_half = False
+
+                self._person_model_device = device
+                self._person_model_half = use_half
+                self._person_model = YOLO(person_model_path)
+                logger.info(f"Person model loaded: {person_model_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load person model at {person_model_path}: {e}")
+
         # Optional face detector configuration via environment
         self._face_model = None
         self._face_threshold = float(os.environ.get("FACE_THRESHOLD", "0.5"))
@@ -130,6 +190,21 @@ class TrackedObjectProcessor(threading.Thread):
         if face_model_path and os.path.exists(face_model_path):
             try:
                 from ultralytics import YOLO  # type: ignore
+
+                device: str | int = "cpu"
+                use_half = False
+                try:
+                    import torch  # type: ignore
+
+                    if bool(getattr(torch, "cuda", None)) and torch.cuda.is_available():
+                        device = 0
+                        use_half = True
+                except Exception:
+                    device = "cpu"
+                    use_half = False
+
+                self._face_model_device = device
+                self._face_model_half = use_half
                 self._face_model = YOLO(face_model_path)
                 logger.info(f"Face model loaded: {face_model_path}")
             except Exception as e:
@@ -173,15 +248,205 @@ class TrackedObjectProcessor(threading.Thread):
         for camera in self.config.cameras.keys():
             self.create_camera_state(camera)
 
-        # Initialize DeepOCSORT tracker safely (only if enabled and available)
-        self.deep_tracker = None
+        self.reid_trackers_person: dict[str, DeepOCSORTTracker] = {}
+        self.reid_trackers_face: dict[str, DeepOCSORTTracker] = {}
         try:
-            track_cfg = getattr(self.config, "track", None)
-            if getattr(track_cfg, "type", None) == "deepocsort":
-                detect_cfg = getattr(self.config, "detect", self.config)
-                self.deep_tracker = DeepOCSORTTracker(detect_cfg)
-        except Exception as e:
-            logger.debug(f"Deep tracker disabled: {e}")
+            tracker_cfg = getattr(self.config, "tracker", None)
+            reid_cfg = None
+            if tracker_cfg is not None:
+                reid_cfg = getattr(tracker_cfg, "deepsortrealtime", None) or getattr(
+                    tracker_cfg, "deepocsort", None
+                )
+        except Exception:
+            reid_cfg = None
+
+        try:
+            for camera_name, cam_cfg in self.config.cameras.items():
+                try:
+                    ptz_metrics = PTZMetrics(autotracker_enabled=False)
+                    kwargs: dict[str, Any] = {"config": cam_cfg, "ptz_metrics": ptz_metrics}
+                    try:
+                        if reid_cfg is not None:
+                            if getattr(reid_cfg, "reid_model_path", None) is not None:
+                                kwargs["reid_model_path"] = getattr(reid_cfg, "reid_model_path")
+                            if getattr(reid_cfg, "reid_device", None) is not None:
+                                kwargs["device"] = getattr(reid_cfg, "reid_device")
+                            if getattr(reid_cfg, "max_age", None) is not None:
+                                kwargs["max_age"] = int(getattr(reid_cfg, "max_age"))
+                            if getattr(reid_cfg, "n_init", None) is not None:
+                                kwargs["n_init"] = int(getattr(reid_cfg, "n_init"))
+                            if getattr(reid_cfg, "max_iou_distance", None) is not None:
+                                kwargs["max_iou_distance"] = float(getattr(reid_cfg, "max_iou_distance"))
+                            if getattr(reid_cfg, "max_cosine_distance", None) is not None:
+                                kwargs["max_cosine_distance"] = float(getattr(reid_cfg, "max_cosine_distance"))
+                            if getattr(reid_cfg, "nn_budget", None) is not None:
+                                kwargs["nn_budget"] = int(getattr(reid_cfg, "nn_budget"))
+                            if getattr(reid_cfg, "reid_threshold", None) is not None:
+                                kwargs["reid_threshold"] = float(getattr(reid_cfg, "reid_threshold"))
+                    except Exception:
+                        pass
+
+                    # Sidecar ReID trackers should confirm quickly so we can save a "first" crop.
+                    # If not explicitly configured, default to n_init=1.
+                    if "n_init" not in kwargs:
+                        kwargs["n_init"] = 1
+
+                    # Option B: use DeepSort track_id as the identity for crop saving.
+                    # This ensures every distinct track gets its own first/best crops (no ReID merges).
+                    kwargs["use_track_id_as_reid"] = True
+
+                    self.reid_trackers_person[camera_name] = DeepOCSORTTracker(**kwargs)
+                    self.reid_trackers_face[camera_name] = DeepOCSORTTracker(**kwargs)
+                except Exception:
+                    continue
+        except Exception:
+            self.reid_trackers_person = {}
+            self.reid_trackers_face = {}
+
+    def _ts_ms(self, frame_time: float) -> int:
+        try:
+            return int(float(frame_time) * 1000)
+        except Exception:
+            return 0
+
+    def _crop_path(
+        self,
+        base_dir: str,
+        camera: str,
+        kind: str,
+        reid_id: str,
+        which: str,
+        frame_time: float,
+        include_ts: bool,
+    ) -> str:
+        # which: "first" or "best"
+        if include_ts:
+            return os.path.join(
+                base_dir,
+                camera,
+                f"{camera}-{kind}-{reid_id}-{which}-{self._ts_ms(frame_time)}.jpg",
+            )
+        return os.path.join(base_dir, camera, f"{camera}-{kind}-{reid_id}-{which}.jpg")
+
+    def _save_padded_crop_to_path(
+        self,
+        out_path: str,
+        box: list[int],
+        frame_time: float,
+        frame: np.ndarray,
+        kind: str | None = None,
+        reid_id: str | None = None,
+        score: float | None = None,
+    ) -> None:
+        x1, y1, x2, y2 = [int(v) for v in box]
+        if x2 <= x1 or y2 <= y1:
+            return
+
+        region = calculate_region(
+            frame.shape,
+            x1,
+            y1,
+            x2,
+            y2,
+            300,
+            multiplier=1.1,
+        )
+        crop = frame[region[1] : region[3], region[0] : region[2]].copy()
+        if crop.size == 0:
+            return
+
+        try:
+            rx1, ry1, rx2, ry2 = int(region[0]), int(region[1]), int(region[2]), int(region[3])
+            cx1 = max(0, min(int(x1 - rx1), crop.shape[1] - 1))
+            cy1 = max(0, min(int(y1 - ry1), crop.shape[0] - 1))
+            cx2 = max(0, min(int(x2 - rx1), crop.shape[1] - 1))
+            cy2 = max(0, min(int(y2 - ry1), crop.shape[0] - 1))
+            if cx2 > cx1 and cy2 > cy1:
+                color = (0, 165, 255)
+                cv2.rectangle(crop, (cx1, cy1), (cx2, cy2), color, 2)
+                label = ""
+                try:
+                    parts: list[str] = []
+                    if kind:
+                        parts.append(str(kind))
+                    if reid_id:
+                        parts.append(str(reid_id))
+                    if score is not None:
+                        parts.append(f"{float(score):.2f}")
+                    label = " ".join(parts)
+                except Exception:
+                    label = ""
+                if label:
+                    try:
+                        (tw, th), baseline = cv2.getTextSize(
+                            label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
+                        )
+                        pad = 3
+                        y_text = max(th + pad, cy1 - 6)
+                        x0 = cx1
+                        y0 = max(0, y_text - th - pad)
+                        x1b = min(crop.shape[1] - 1, x0 + tw + pad * 2)
+                        y1b = min(crop.shape[0] - 1, y_text + baseline + pad)
+                        cv2.rectangle(crop, (x0, y0), (x1b, y1b), color, -1)
+                        cv2.putText(
+                            crop,
+                            label,
+                            (x0 + pad, y_text),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            (0, 0, 0),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        try:
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        except Exception:
+            pass
+        try:
+            ok = cv2.imwrite(out_path, crop)
+            if not ok:
+                logger.warning("Failed to write crop: path=%s", out_path)
+                return
+        except Exception:
+            logger.exception("Failed to write crop: path=%s", out_path)
+            return
+
+        try:
+            which: str | None = None
+            name = os.path.basename(out_path).lower()
+            if "-first-" in name:
+                which = "first"
+            elif "-best-" in name:
+                which = "best"
+
+            camera = os.path.basename(os.path.dirname(out_path))
+
+            payload = {
+                "label": kind,
+                "reid_id": reid_id,
+                "score": float(score) if score is not None else None,
+                "camera": camera,
+                "frame_time": float(frame_time),
+                "timestamp_ms": self._ts_ms(frame_time),
+                "which": which,
+                "file": os.path.basename(out_path),
+            }
+
+            json_path = os.path.splitext(out_path)[0] + ".json"
+            tmp_path = json_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp_path, json_path)
+        except Exception:
+            pass
+
+
+
 
     def create_camera_state(self, camera: str) -> None:
         """Creates a new camera state."""
@@ -407,19 +672,23 @@ class TrackedObjectProcessor(threading.Thread):
         else:
             return {}
 
+    def get_best_by_id(self, camera: str, object_id: str) -> dict[str, Any]:
+        """Returns the best thumbnail data for a given object id."""
+        try:
+            return self.camera_states[camera].best_objects[object_id].thumbnail_data
+        except Exception:
+            return {}
+
     def get_current_frame(
-        self, camera: str, draw_options: dict[str, Any] = {}
+        self, camera: str, draw_options: dict[str, Any] | None = None
     ) -> np.ndarray | None:
-        if camera == "birdseye":
-            return self.frame_manager.get(
-                "birdseye",
-                (self.config.birdseye.height * 3 // 2, self.config.birdseye.width),
-            )
-
-        if camera not in self.camera_states:
+        """Returns the latest frame for a given camera."""
+        if draw_options is None:
+            draw_options = {}
+        try:
+            return self.camera_states[camera].get_current_frame(draw_options)
+        except Exception:
             return None
-
-        return self.camera_states[camera].get_current_frame(draw_options)
 
     def get_current_frame_time(self, camera: str) -> float:
         """Returns the latest frame time for a given camera."""
@@ -811,6 +1080,62 @@ class TrackedObjectProcessor(threading.Thread):
             except queue.Empty:
                 continue
 
+            try:
+                debug_enabled = os.environ.get("OBJECT_PROCESSING_DEBUG", "0") in (
+                    "1",
+                    "true",
+                    "True",
+                )
+            except Exception:
+                debug_enabled = False
+
+            if debug_enabled:
+                try:
+                    every_n = int(os.environ.get("OBJECT_PROCESSING_DEBUG_EVERY_N", "30"))
+                except Exception:
+                    every_n = 30
+                try:
+                    if not hasattr(self, "_objproc_debug_counter"):
+                        self._objproc_debug_counter = 0
+                    self._objproc_debug_counter += 1
+                    if every_n <= 1 or (self._objproc_debug_counter % every_n) == 0:
+                        det_count = -1
+                        labels: dict[str, int] = {}
+                        try:
+                            if isinstance(current_tracked_objects, dict):
+                                det_count = len(current_tracked_objects)
+                                for o in current_tracked_objects.values():
+                                    if isinstance(o, dict):
+                                        l = str(o.get("label") or o.get("name") or "unknown")
+                                    else:
+                                        l = str(getattr(o, "label", "unknown"))
+                                    labels[l] = labels.get(l, 0) + 1
+                            elif isinstance(current_tracked_objects, list):
+                                det_count = len(current_tracked_objects)
+                                for o in current_tracked_objects:
+                                    if isinstance(o, dict):
+                                        l = str(o.get("label") or o.get("name") or "unknown")
+                                    elif isinstance(o, (tuple, list)) and len(o) > 0:
+                                        l = str(o[0])
+                                    else:
+                                        l = str(getattr(o, "label", "unknown"))
+                                    labels[l] = labels.get(l, 0) + 1
+                        except Exception:
+                            det_count = -1
+                            labels = {}
+
+                        logger.info(
+                            "ObjectProcessing debug: camera=%s frame=%.6f detections=%s labels=%s motion_boxes=%s regions=%s",
+                            camera,
+                            float(frame_time),
+                            det_count,
+                            labels,
+                            len(motion_boxes) if isinstance(motion_boxes, list) else -1,
+                            len(regions) if isinstance(regions, list) else -1,
+                        )
+                except Exception:
+                    pass
+
             if not self.config.cameras[camera].enabled:
                 # Camera disabled - skipping update
                 continue
@@ -823,192 +1148,418 @@ class TrackedObjectProcessor(threading.Thread):
 
             self.update_mqtt_motion(camera, frame_time, motion_boxes)
 
-            frame = None
-            if self._draw_clip_overlays or self._face_model:
-                frame = self.get_current_frame(camera)
-
-            face_extra = None
-            face_save_score = None
-            face_event_id = None
-            # Secondary face detection on frames containing a person (optional)
+            frame_yuv = None
+            frame_bgr = None
             try:
-                if self._face_model and current_tracked_objects is not None:
-                    has_person = any(
-                        (getattr(o, "label", None) == "person") or
-                        (isinstance(o, dict) and o.get("label") == "person") or
-                        (hasattr(o, "obj_data") and isinstance(getattr(o, "obj_data"), dict) and o.obj_data.get("label") == "person")
-                        for o in current_tracked_objects
-                    )
-                    # Run face model whenever frame is available (no person gating)
-                    if True or self._face_always_run:
-                        logger.info(
-                            f"Face inference: camera={camera}, has_person={has_person}, always_run={self._face_always_run}"
-                        )
-                        if frame is None:
-                            logger.info(f"Face detection skipped: no frame available for camera {camera}")
-                            # clear any pending face dets for tracker if we have no frame
-                            self._pending_face_detections = []
-                            face_extra = []
-                        else:
-                            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            results = self._face_model.predict(
-                                img_rgb,
-                                verbose=False,
-                                save=False,
-                            )
-                            # Normalize face detections for DeepSORT (xyxy format per object)
-                            face_norm_dets = []
-                            try:
-                                for r in results:
-                                    names = getattr(r, "names", {}) or {}
-                                    boxes = getattr(r, "boxes", None)
-                                    if boxes is None:
-                                        continue
-                                    for b in boxes:
-                                        try:
-                                            # coords
-                                            if hasattr(b, "xyxy"):
-                                                arr = b.xyxy[0].tolist()
-                                                x1, y1, x2, y2 = [int(v) for v in arr[:4]]
-                                            elif hasattr(b, "xywh"):
-                                                arr = b.xywh[0].tolist()
-                                                cx, cy, w, h = arr[:4]
-                                                x1, y1 = int(cx - w / 2), int(cy - h / 2)
-                                                x2, y2 = int(cx + w / 2), int(cy + h / 2)
-                                            else:
-                                                continue
-                                            # class/conf
-                                            cls_id = int(b.cls.item()) if hasattr(b.cls, "item") else int(b.cls)
-                                            conf = float(b.conf.item()) if hasattr(b.conf, "item") else float(b.conf)
-                                            label = names.get(cls_id, "face")
-                                            face_norm_dets.append({
-                                                "label": label,
-                                                "score": conf,
-                                                "x1": x1,
-                                                "y1": y1,
-                                                "x2": x2,
-                                                "y2": y2,
-                                            })
-                                        except Exception:
-                                            continue
-                            except Exception:
-                                face_norm_dets = []
-                            # store for merging into DeepSORT tracker update
-                            self._pending_face_detections = face_norm_dets
-                            face_extra = face_norm_dets
-                            face_score = 0.0
-                            for r in results:
-                                names = getattr(r, "names", {}) or {}
-                                boxes = getattr(r, "boxes", None)
-                                if boxes is None:
-                                    continue
-                                for b in boxes:
-                                    try:
-                                        cls_id = int(b.cls.item()) if hasattr(b.cls, "item") else int(b.cls)
-                                        conf = float(b.conf.item()) if hasattr(b.conf, "item") else float(b.conf)
-                                    except Exception:
-                                        continue
-                                    label = names.get(cls_id, str(cls_id))
-                                    # common face models label faces as 'face', otherwise accept class id 0
-                                    if label == "face" or cls_id == 0:
-                                        if conf > face_score:
-                                            face_score = conf
-                            face_save_score = face_score
-                            try:
-                                logger.info(
-                                    f"Face detection results: camera={camera}, dets={len(face_norm_dets)}, best_score={face_score:.3f}, threshold={self._face_threshold:.3f}"
-                                )
-                            except Exception:
-                                pass
-                            if face_score >= self._face_threshold:
-                                event_id = uuid.uuid4().hex
-                                face_event_id = event_id
-                                include_recording = True
-                                sub_label = None
-                                duration = None
-                                source_type = "api"
-                                draw = {"boxes": []}
-                                try:
-                                    detect_cfg = self.config.cameras[camera].detect
-                                    w = float(detect_cfg.width)
-                                    h = float(detect_cfg.height)
-                                    for fobj in face_norm_dets:
-                                        fx1 = fobj.get("x1"); fy1 = fobj.get("y1"); fx2 = fobj.get("x2"); fy2 = fobj.get("y2")
-                                        if None in (fx1, fy1, fx2, fy2):
-                                            continue
-                                        fx1, fy1, fx2, fy2 = map(float, (fx1, fy1, fx2, fy2))
-                                        bw = max(0.0, (fx2 - fx1))
-                                        bh = max(0.0, (fy2 - fy1))
-                                        if w <= 0 or h <= 0 or bw <= 0 or bh <= 0:
-                                            continue
-                                        draw["boxes"].append(
-                                            {
-                                                "box": [fx1 / w, fy1 / h, bw / w, bh / h],
-                                                "score": int(float(fobj.get("score", 0.0)) * 100),
-                                                "color": (0, 120, 0),
-                                            }
-                                        )
-                                except Exception:
-                                    draw = {}
-                                try:
-                                    logger.info(
-                                        f"Face event created: camera={camera}, event_id={event_id}, score={face_score:.3f}"
-                                    )
-                                except Exception:
-                                    pass
-                                self.create_manual_event(
-                                    (
-                                        frame_time,
-                                        camera,
-                                        "face",
-                                        event_id,
-                                        include_recording,
-                                        face_score,
-                                        sub_label,
-                                        duration,
-                                        source_type,
-                                        draw,
-                                    )
-                                )
-            except Exception as e:
-                logger.debug(f"Face detection step skipped due to error: {e}")
-                face_extra = getattr(self, "_pending_face_detections", None)
+                cam_cfg = self.config.cameras[camera]
+                frame_yuv = self.frame_manager.get(
+                    frame_name,
+                    cam_cfg.frame_shape_yuv,
+                )
+            except Exception:
+                frame_yuv = None
 
-            # -------------- tracking --------------
-            # IMPORTANT: do not replace Frigate's tracked_objects pipeline.
-            # If we overwrite tracked_objects here, core event snapshot/clip saving breaks.
-            deep_tracked_objects = None
-            if self.deep_tracker:
-                # Feed detections into DeepOCSORT (for overlay/track id purposes only)
-                detections_for_tracker = current_tracked_objects if current_tracked_objects else []
-                if isinstance(detections_for_tracker, tuple):
-                    detections_for_tracker = list(detections_for_tracker)
-                if face_extra:
+            if debug_enabled and frame_yuv is None:
+                try:
+                    logger.warning(
+                        "Raw frame fetch returned None: camera=%s frame=%.6f frame_name=%s expected_shape=%s",
+                        camera,
+                        float(frame_time),
+                        str(frame_name),
+                        str(getattr(self.config.cameras[camera], "frame_shape_yuv", None)),
+                    )
+                except Exception:
+                    pass
+
+            if frame_yuv is not None:
+                try:
+                    frame_bgr = cv2.cvtColor(frame_yuv, cv2.COLOR_YUV2BGR_I420)
+                except Exception:
+                    frame_bgr = None
+
+            if debug_enabled and frame_yuv is not None and frame_bgr is None:
+                try:
+                    logger.warning(
+                        "Raw frame convert failed (YUV->BGR): camera=%s frame=%.6f frame_name=%s yuv_shape=%s",
+                        camera,
+                        float(frame_time),
+                        str(frame_name),
+                        str(getattr(frame_yuv, "shape", None)),
+                    )
+                except Exception:
+                    pass
+
+            person_dets: list[dict[str, Any]] = []
+            face_dets: list[dict[str, Any]] = []
+
+            if frame_bgr is not None:
+                if self._person_model is not None:
                     try:
-                        detections_for_tracker = list(detections_for_tracker) + list(face_extra)
+                        person_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        # Use .predict for consistency with face model and to avoid
+                        # accidental differences in inference defaults.
+                        person_device = getattr(self, "_person_model_device", "cpu")
+                        person_half = bool(getattr(self, "_person_model_half", False))
+                        results = self._person_model.predict(
+                            person_rgb,
+                            verbose=False,
+                            save=False,
+                            device=person_device,
+                            half=person_half,
+                        )
+                        for r in results:
+                            names = getattr(r, "names", {}) or {}
+                            boxes = getattr(r, "boxes", None)
+                            if boxes is None:
+                                continue
+                            for b in boxes:
+                                try:
+                                    conf = float(b.conf.item()) if hasattr(b.conf, "item") else float(b.conf)
+                                    if conf < float(self._person_threshold):
+                                        continue
+                                    cls_id = int(b.cls.item()) if hasattr(b.cls, "item") else int(b.cls)
+                                    label = names.get(cls_id, str(cls_id))
+                                    try:
+                                        label_str = str(label)
+                                    except Exception:
+                                        label_str = ""
+                                    if cls_id != 0 and "person" not in label_str.lower():
+                                        continue
+                                    arr = b.xyxy[0].tolist() if hasattr(b, "xyxy") else None
+                                    if not arr or len(arr) < 4:
+                                        continue
+                                    x1, y1, x2, y2 = [int(v) for v in arr[:4]]
+                                    person_dets.append(
+                                        {"label": "person", "score": conf, "box": [x1, y1, x2, y2]}
+                                    )
+                                except Exception:
+                                    continue
+                    except Exception:
+                        if debug_enabled:
+                            logger.exception(
+                                "Person model inference failed: camera=%s frame=%.6f",
+                                camera,
+                                float(frame_time),
+                            )
+                        self._person_infer_failures += 1
+                        if (
+                            self._person_infer_max_failures > 0
+                            and self._person_infer_failures >= self._person_infer_max_failures
+                        ):
+                            logger.error(
+                                "Disabling person model after %s failures (likely incompatible model/Ultralytics).",
+                                self._person_infer_failures,
+                            )
+                            self._person_model = None
+                        person_dets = []
+                elif debug_enabled:
+                    logger.info(
+                        "Person model not loaded; skipping person detections: camera=%s",
+                        camera,
+                    )
+
+                if self._face_model is not None:
+                    try:
+                        face_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        face_device = getattr(self, "_face_model_device", "cpu")
+                        face_half = bool(getattr(self, "_face_model_half", False))
+                        results = self._face_model.predict(
+                            face_rgb,
+                            verbose=False,
+                            save=False,
+                            device=face_device,
+                            half=face_half,
+                        )
+                        for r in results:
+                            names = getattr(r, "names", {}) or {}
+                            boxes = getattr(r, "boxes", None)
+                            if boxes is None:
+                                continue
+                            for b in boxes:
+                                try:
+                                    conf = float(b.conf.item()) if hasattr(b.conf, "item") else float(b.conf)
+                                    if conf < float(self._face_threshold):
+                                        continue
+                                    cls_id = int(b.cls.item()) if hasattr(b.cls, "item") else int(b.cls)
+                                    label = names.get(cls_id, "face")
+                                    arr = b.xyxy[0].tolist() if hasattr(b, "xyxy") else None
+                                    if not arr or len(arr) < 4:
+                                        continue
+                                    x1, y1, x2, y2 = [int(v) for v in arr[:4]]
+                                    face_dets.append(
+                                        {"label": "face", "score": conf, "box": [x1, y1, x2, y2]}
+                                    )
+                                except Exception:
+                                    continue
+                    except Exception:
+                        face_dets = []
+
+            if debug_enabled and frame_bgr is not None and self._person_model is not None:
+                if len(person_dets) == 0:
+                    try:
+                        logger.info(
+                            "Person dets are 0 after filtering: camera=%s frame=%.6f threshold=%.3f",
+                            camera,
+                            float(frame_time),
+                            float(self._person_threshold),
+                        )
                     except Exception:
                         pass
-                self.deep_tracker.match_and_update(
-                    frame_name=frame_name,
-                    frame_time=frame_time,
-                    detections=detections_for_tracker,
-                )
-                deep_tracked_objects = list(self.deep_tracker.get_tracked_objects().values())
+
+            person_tracker = self.reid_trackers_person.get(camera)
+            face_tracker = self.reid_trackers_face.get(camera)
+
+            if person_tracker is not None:
+                try:
+                    person_tracker.match_and_update(
+                        frame_name=frame_name,
+                        frame_time=frame_time,
+                        detections=person_dets,
+                        frame=frame_yuv,
+                    )
+                except Exception:
+                    if debug_enabled:
+                        logger.exception(
+                            "ReID person match_and_update failed: camera=%s frame=%.6f dets=%s",
+                            camera,
+                            float(frame_time),
+                            len(person_dets),
+                        )
+
+            if face_tracker is not None:
+                try:
+                    face_tracker.match_and_update(
+                        frame_name=frame_name,
+                        frame_time=frame_time,
+                        detections=face_dets,
+                        frame=frame_yuv,
+                    )
+                except Exception:
+                    if debug_enabled:
+                        logger.exception(
+                            "ReID face match_and_update failed: camera=%s frame=%.6f dets=%s",
+                            camera,
+                            float(frame_time),
+                            len(face_dets),
+                        )
+
+            if debug_enabled:
+                try:
+                    p_tracks = (
+                        len(person_tracker.get_tracked_objects())
+                        if person_tracker is not None
+                        else 0
+                    )
+                    f_tracks = (
+                        len(face_tracker.get_tracked_objects())
+                        if face_tracker is not None
+                        else 0
+                    )
+                    logger.info(
+                        "ReID debug: camera=%s frame=%.6f person_dets=%s face_dets=%s person_tracks=%s face_tracks=%s out_person=%s out_face=%s",
+                        camera,
+                        float(frame_time),
+                        len(person_dets),
+                        len(face_dets),
+                        p_tracks,
+                        f_tracks,
+                        self._person_output_dir,
+                        self._face_crop_output_dir,
+                    )
+                except Exception:
+                    pass
+
+            if frame_bgr is not None:
+                try:
+                    if person_tracker is not None:
+                        for obj in person_tracker.get_tracked_objects().values():
+                            if not isinstance(obj, dict):
+                                continue
+                            rid = obj.get("reid_id")
+                            box = obj.get("box")
+                            if not rid or not isinstance(box, list) or len(box) != 4:
+                                continue
+                            try:
+                                score = float(obj.get("score") or 0.0)
+                            except Exception:
+                                score = 0.0
+                            if score < float(self._best_person_min_score):
+                                continue
+
+                            key = ("person", str(rid))
+                            if key not in self._first_saved[camera]:
+                                out_path = self._crop_path(
+                                    self._person_output_dir,
+                                    camera,
+                                    "person",
+                                    str(rid),
+                                    "first",
+                                    frame_time,
+                                    self._crop_add_timestamp,
+                                )
+                                self._save_padded_crop_to_path(
+                                    out_path=out_path,
+                                    box=[int(v) for v in box],
+                                    frame_time=frame_time,
+                                    frame=frame_bgr,
+                                    kind="person",
+                                    reid_id=str(rid),
+                                    score=score,
+                                )
+                                self._first_saved[camera].add(key)
+                                if debug_enabled:
+                                    logger.info(
+                                        "Saved FIRST person crop: camera=%s reid_id=%s score=%.3f path=%s",
+                                        camera,
+                                        str(rid),
+                                        float(score),
+                                        out_path,
+                                    )
+
+                            prev_best = float(self._best_saved[camera].get(key, 0.0) or 0.0)
+                            if score > prev_best:
+                                out_path = self._crop_path(
+                                    self._person_output_dir,
+                                    camera,
+                                    "person",
+                                    str(rid),
+                                    "best",
+                                    frame_time,
+                                    self._crop_add_timestamp and self._crop_save_best_history,
+                                )
+                                self._save_padded_crop_to_path(
+                                    out_path=out_path,
+                                    box=[int(v) for v in box],
+                                    frame_time=frame_time,
+                                    frame=frame_bgr,
+                                    kind="person",
+                                    reid_id=str(rid),
+                                    score=score,
+                                )
+                                self._best_saved[camera][key] = float(score)
+                                if debug_enabled:
+                                    logger.info(
+                                        "Saved BEST person crop: camera=%s reid_id=%s score=%.3f path=%s",
+                                        camera,
+                                        str(rid),
+                                        float(score),
+                                        out_path,
+                                    )
+                except Exception:
+                    if debug_enabled:
+                        logger.exception(
+                            "Person crop saving failed: camera=%s frame=%.6f",
+                            camera,
+                            float(frame_time),
+                        )
+
+                try:
+                    if face_tracker is not None:
+                        for obj in face_tracker.get_tracked_objects().values():
+                            if not isinstance(obj, dict):
+                                continue
+                            rid = obj.get("reid_id")
+                            box = obj.get("box")
+                            if not rid or not isinstance(box, list) or len(box) != 4:
+                                continue
+                            try:
+                                score = float(obj.get("score") or 0.0)
+                            except Exception:
+                                score = 0.0
+                            if score < float(self._best_face_min_score):
+                                if debug_enabled and key not in self._first_saved[camera]:
+                                    logger.info(
+                                        "Skip face crop (score<threshold): camera=%s reid_id=%s score=%.3f threshold=%.3f",
+                                        camera,
+                                        str(rid),
+                                        float(score),
+                                        float(self._best_face_min_score),
+                                    )
+                                continue
+
+                            key = ("face", str(rid))
+                            if key not in self._first_saved[camera]:
+                                out_path = self._crop_path(
+                                    self._face_crop_output_dir,
+                                    camera,
+                                    "face",
+                                    str(rid),
+                                    "first",
+                                    frame_time,
+                                    self._crop_add_timestamp,
+                                )
+                                self._save_padded_crop_to_path(
+                                    out_path=out_path,
+                                    box=[int(v) for v in box],
+                                    frame_time=frame_time,
+                                    frame=frame_bgr,
+                                    kind="face",
+                                    reid_id=str(rid),
+                                    score=score,
+                                )
+                                self._first_saved[camera].add(key)
+                                if debug_enabled:
+                                    logger.info(
+                                        "Saved FIRST face crop: camera=%s reid_id=%s score=%.3f path=%s",
+                                        camera,
+                                        str(rid),
+                                        float(score),
+                                        out_path,
+                                    )
+
+                            prev_best = float(self._best_saved[camera].get(key, 0.0) or 0.0)
+                            if score > prev_best:
+                                out_path = self._crop_path(
+                                    self._face_crop_output_dir,
+                                    camera,
+                                    "face",
+                                    str(rid),
+                                    "best",
+                                    frame_time,
+                                    self._crop_add_timestamp and self._crop_save_best_history,
+                                )
+                                self._save_padded_crop_to_path(
+                                    out_path=out_path,
+                                    box=[int(v) for v in box],
+                                    frame_time=frame_time,
+                                    frame=frame_bgr,
+                                    kind="face",
+                                    reid_id=str(rid),
+                                    score=score,
+                                )
+                                self._best_saved[camera][key] = float(score)
+                                if debug_enabled:
+                                    logger.info(
+                                        "Saved BEST face crop: camera=%s reid_id=%s score=%.3f path=%s",
+                                        camera,
+                                        str(rid),
+                                        float(score),
+                                        out_path,
+                                    )
+                except Exception:
+                    if debug_enabled:
+                        logger.exception(
+                            "Face crop saving failed: camera=%s frame=%.6f",
+                            camera,
+                            float(frame_time),
+                        )
+
+            # Keep core Frigate tracked objects pipeline unchanged.
 
             tracked_objects = [
                 o.to_dict() for o in camera_state.tracked_objects.values()
             ]
 
             if self._draw_clip_overlays:
-                if frame is not None and tracked_objects is not None:
+                if frame_bgr is not None and tracked_objects is not None:
                     try:
-                        annotated = frame.copy()
+                        annotated = frame_bgr.copy()
                         try:
                             import time as _time
                             sec = _time.strftime('%S', _time.localtime(frame_time))
                         except Exception:
                             sec = f"{int(frame_time)%60:02d}"
-                        overlay_objects = deep_tracked_objects if deep_tracked_objects is not None else tracked_objects
+                        overlay_objects = tracked_objects
                         for obj in overlay_objects:
                             raw_tid = obj.get("id") or obj.get("track_id") or obj.get("tracking_id")
                             tid = None
@@ -1030,7 +1581,7 @@ class TrackedObjectProcessor(threading.Thread):
                                 bx = obj["bbox"]
                                 if all(k in bx for k in ("x", "y", "w", "h")):
                                     x1, y1 = int(bx["x"]), int(bx["y"])
-                                    x2, y2 = int(bx["x"] + bx["w"]), int(bx["y"] + bx["h"])
+                                    x2, y2 = x1 + int(bx["w"]), y1 + int(bx["h"])
                             elif all(k in obj for k in ("x1", "y1", "x2", "y2")):
                                 x1, y1, x2, y2 = obj["x1"], obj["y1"], obj["x2"], obj["y2"]
 
@@ -1134,11 +1685,25 @@ class TrackedObjectProcessor(threading.Thread):
         for state in self.camera_states.values():
             state.shutdown()
 
-        self.requestor.stop()
-        self.detection_publisher.stop()
-        self.event_sender.stop()
-        self.event_end_subscriber.stop()
-        self.sub_label_subscriber.stop()
-        self.camera_config_subscriber.stop()
+        if hasattr(self.requestor, "stop") and callable(getattr(self.requestor, "stop")):
+            self.requestor.stop()
+        if hasattr(self.detection_publisher, "stop") and callable(
+            getattr(self.detection_publisher, "stop")
+        ):
+            self.detection_publisher.stop()
+        if hasattr(self.event_sender, "stop") and callable(getattr(self.event_sender, "stop")):
+            self.event_sender.stop()
+        if hasattr(self.event_end_subscriber, "stop") and callable(
+            getattr(self.event_end_subscriber, "stop")
+        ):
+            self.event_end_subscriber.stop()
+        if hasattr(self.sub_label_subscriber, "stop") and callable(
+            getattr(self.sub_label_subscriber, "stop")
+        ):
+            self.sub_label_subscriber.stop()
+        if hasattr(self.camera_config_subscriber, "stop") and callable(
+            getattr(self.camera_config_subscriber, "stop")
+        ):
+            self.camera_config_subscriber.stop()
 
         logger.info("Exiting object processor...")

@@ -55,9 +55,6 @@ class TrackedObject:
         del obj_data["score_history"]
 
         self.obj_data = obj_data
-        # 🔹 Replace tracker ID with ReID ID if available
-        if "reid_id" in obj_data:
-            self.obj_data["id"] = obj_data["reid_id"]
 
         self.colormap = model_config.colormap
         self.logos = model_config.all_attribute_logos

@@ -31,9 +31,9 @@ from frigate.motion.improved_motion import ImprovedMotionDetector
 from frigate.object_detection.base import RemoteObjectDetector
 from frigate.ptz.autotrack import ptz_moving_at_frame_time
 from frigate.track import ObjectTracker
+from frigate.track.centroid_tracker import CentroidTracker
 from frigate.track.norfair_tracker import NorfairTracker
 from frigate.track.deepocsort_tracker import DeepOCSORTTracker
-from frigate.config import TrackerTypeEnum
 from frigate.track.tracked_object import TrackedObjectAttribute
 from frigate.util.builtin import EventsPerSecond, get_tomorrow_at_time
 from frigate.util.image import (
@@ -57,46 +57,6 @@ from frigate.util.process import FrigateProcess
 
 logger = logging.getLogger(__name__)
 
-
-def stop_ffmpeg(ffmpeg_process: sp.Popen[Any], logger: logging.Logger):
-    logger.info("Terminating the existing ffmpeg process...")
-    ffmpeg_process.terminate()
-    try:
-        logger.info("Waiting for ffmpeg to exit gracefully...")
-        ffmpeg_process.communicate(timeout=30)
-    except sp.TimeoutExpired:
-        logger.info("FFmpeg didn't exit. Force killing...")
-        ffmpeg_process.kill()
-        ffmpeg_process.communicate()
-    ffmpeg_process = None
-
-
-def start_or_restart_ffmpeg(
-    ffmpeg_cmd, logger, logpipe: LogPipe, frame_size=None, ffmpeg_process=None
-) -> sp.Popen[Any]:
-    if ffmpeg_process is not None:
-        stop_ffmpeg(ffmpeg_process, logger)
-
-    if frame_size is None:
-        process = sp.Popen(
-            ffmpeg_cmd,
-            stdout=sp.DEVNULL,
-            stderr=logpipe,
-            stdin=sp.DEVNULL,
-            start_new_session=True,
-        )
-    else:
-        process = sp.Popen(
-            ffmpeg_cmd,
-            stdout=sp.PIPE,
-            stderr=logpipe,
-            stdin=sp.DEVNULL,
-            bufsize=frame_size * 10,
-            start_new_session=True,
-        )
-    return process
-
-
 def capture_frames(
     ffmpeg_process: sp.Popen[Any],
     config: CameraConfig,
@@ -109,6 +69,8 @@ def capture_frames(
     skipped_fps: Value,
     current_frame: Value,
     stop_event: MpEvent,
+    object_detector: RemoteObjectDetector,
+    object_tracker: ObjectTracker,
 ) -> None:
     frame_size = frame_shape[0] * frame_shape[1]
     frame_rate = EventsPerSecond()
@@ -123,6 +85,9 @@ def capture_frames(
         """Fetch the latest enabled state from ZMQ."""
         config_subscriber.check_for_updates()
         return config.enabled
+
+    detection_debug = os.environ.get("DETECTION_DEBUG", "0") == "1"
+    detection_debug_every_n = int(os.environ.get("DETECTION_DEBUG_EVERY_N", "1"))
 
     while not stop_event.is_set():
         if not get_enabled_state():
@@ -566,18 +531,26 @@ class CameraTracker(FrigateProcess):
             self.stop_event,
         )
 
-        # Initialize tracker based on configuration
-        if self.tracker_config and self.tracker_config.type == TrackerTypeEnum.deepocsort:
-            if self.tracker_config.deepocsort:
-                object_tracker = DeepOCSORTTracker(
-                    self.config,
-                    self.ptz_metrics,
-                    reid_model_path=self.tracker_config.deepocsort.reid_model_path,
-                    device=self.tracker_config.deepocsort.reid_device,
-                )
-            else:
-                object_tracker = DeepOCSORTTracker(self.config, self.ptz_metrics)
+        # Tracker selection (core Frigate tracking).
+        # This must remain compatible with Frigate's config to avoid breaking events/snapshots.
+        tracker_type = None
+        try:
+            tracker_type = getattr(self.tracker_config, "type", None)
+        except Exception:
+            tracker_type = None
+
+        tracker_type_value = tracker_type
+        try:
+            tracker_type_value = tracker_type.value  # type: ignore[union-attr]
+        except Exception:
+            pass
+
+        if tracker_type_value == "centroid":
+            object_tracker = CentroidTracker(self.config.detect)
+        elif tracker_type_value in ("deepocsort", "deepsortrealtime"):
+            object_tracker = DeepOCSORTTracker(self.config, self.ptz_metrics)
         else:
+            # default: Norfair
             object_tracker = NorfairTracker(self.config, self.ptz_metrics)
 
         frame_manager = SharedMemoryFrameManager()
@@ -729,19 +702,28 @@ def process_frames(
             )
             prev_enabled = camera_enabled
 
-            # Clear norfair's dictionaries
+            # Clear tracker dictionaries
             object_tracker.tracked_objects.clear()
             object_tracker.disappeared.clear()
             object_tracker.stationary_box_history.clear()
             object_tracker.positions.clear()
             object_tracker.track_id_map.clear()
 
-            # Clear internal norfair states
-            for trackers_by_type in object_tracker.trackers.values():
-                for tracker in trackers_by_type.values():
+            # Clear boxes without tracked objects if supported
+            if hasattr(object_tracker, "untracked_object_boxes"):
+                try:
+                    object_tracker.untracked_object_boxes = []
+                except Exception:
+                    pass
+
+            # Clear internal norfair states (only for NorfairTracker)
+            if hasattr(object_tracker, "trackers"):
+                for trackers_by_type in object_tracker.trackers.values():
+                    for tracker in trackers_by_type.values():
+                        tracker.tracked_objects = []
+            if hasattr(object_tracker, "default_tracker"):
+                for tracker in object_tracker.default_tracker.values():
                     tracker.tracked_objects = []
-            for tracker in object_tracker.default_tracker.values():
-                tracker.tracked_objects = []
 
         if not camera_enabled:
             time.sleep(0.1)
@@ -929,6 +911,36 @@ def process_frames(
         for obj in object_tracker.tracked_objects.values():
             detections[obj["id"]] = {**obj, "attributes": []}
 
+        det_debug = os.environ.get("DETECTION_DEBUG", "0") in ("1", "true", "True")
+        if det_debug:
+            try:
+                every_n = int(os.environ.get("DETECTION_DEBUG_EVERY_N", "30"))
+            except Exception:
+                every_n = 30
+            try:
+                if every_n <= 1 or (frame_counter % every_n) == 0:
+                    labels: dict[str, int] = {}
+                    try:
+                        for o in detections.values():
+                            l = str(o.get("label", "unknown"))
+                            labels[l] = labels.get(l, 0) + 1
+                    except Exception:
+                        labels = {}
+                    logger.info(
+                        "Detection debug: camera=%s frame=%.6f regions=%s motion_boxes=%s consolidated=%s tracked=%s labels=%s",
+                        camera_config.name,
+                        float(frame_time),
+                        len(regions) if isinstance(regions, list) else -1,
+                        len(motion_boxes) if isinstance(motion_boxes, list) else -1,
+                        len(consolidated_detections)
+                        if isinstance(consolidated_detections, list)
+                        else -1,
+                        len(detections),
+                        labels,
+                    )
+            except Exception:
+                pass
+
         # find the best object for each attribute to be assigned to
         all_objects: list[dict[str, Any]] = object_tracker.tracked_objects.values()
         for attributes in attribute_detections.values():
@@ -1017,12 +1029,7 @@ def process_frames(
                 bgr_frame,
             )
         # add to the queue if not full
-        if detected_objects_queue.full():
-            frame_manager.close(frame_name)
-            continue
-        else:
-            fps_tracker.update()
-            camera_metrics.process_fps.value = fps_tracker.eps()
+        try:
             detected_objects_queue.put(
                 (
                     camera_config.name,
@@ -1031,8 +1038,15 @@ def process_frames(
                     detections,
                     motion_boxes,
                     regions,
-                )
+                ),
+                block=False,
             )
+        except queue.Full:
+            frame_manager.close(frame_name)
+            continue
+        else:
+            fps_tracker.update()
+            camera_metrics.process_fps.value = fps_tracker.eps()
             camera_metrics.detection_fps.value = object_detector.fps.eps()
             frame_manager.close(frame_name)
 

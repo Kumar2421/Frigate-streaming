@@ -9,7 +9,7 @@ __all__ = ["CameraLiveConfig"]
 
 class CameraLiveConfig(FrigateBaseModel):
     streams: Dict[str, str] = Field(
-        default_factory=list,
+        default_factory=dict,
         title="Friendly names and restream names to use for live view.",
     )
     height: int = Field(default=720, title="Live camera view height")

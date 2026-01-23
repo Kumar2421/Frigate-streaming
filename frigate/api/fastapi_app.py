@@ -19,6 +19,7 @@ from frigate.api import app as main_app
 from frigate.api import (
     auth,
     classification,
+    crops,
     event,
     export,
     media,
@@ -205,6 +206,7 @@ def create_fastapi_app(
     app.include_router(export.router)
     app.include_router(event.router)
     app.include_router(media.router)
+    app.include_router(crops.router)
     # App Properties
     app.frigate_config = frigate_config
     app.embeddings = embeddings

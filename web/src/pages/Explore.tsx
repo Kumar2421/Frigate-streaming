@@ -3,17 +3,27 @@ import {
   useTrackedObjectUpdate,
   useModelState,
 } from "@/api/ws";
+import { useApiHost } from "@/api";
 import ActivityIndicator from "@/components/indicators/activity-indicator";
 import AnimatedCircularProgressBar from "@/components/ui/circular-progress-bar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useApiFilterArgs } from "@/hooks/use-api-filter";
 import { useTimezone } from "@/hooks/use-date-utils";
 import { usePersistence } from "@/hooks/use-persistence";
+import useImageLoaded from "@/hooks/use-image-loaded";
+import { cn } from "@/lib/utils";
 import { FrigateConfig } from "@/types/frigateConfig";
 import { SearchFilter, SearchQuery, SearchResult } from "@/types/search";
 import { ModelState } from "@/types/ws";
 import { formatSecondsToDuration } from "@/utils/dateUtil";
 import SearchView from "@/views/search/SearchView";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import TimeAgo from "@/components/dynamic/TimeAgo";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isMobileOnly } from "react-device-detect";
 import { useTranslation } from "react-i18next";
 import { LuCheck, LuExternalLink, LuX } from "react-icons/lu";
@@ -34,6 +44,30 @@ const SEARCH_FILTER_ARRAY_KEYS = [
   "recognized_license_plate",
   "zones",
 ];
+
+type CropKind = "first-person" | "first-face";
+type CropWhich = "first" | "best" | "both";
+
+type CropItem = {
+  kind: CropKind;
+  camera: string;
+  file: string;
+  mtime: number;
+  url: string;
+  label?: string | null;
+  reid_id?: string | number | null;
+  score?: number | null;
+  which?: "first" | "best" | null;
+  frame_time?: number | null;
+  timestamp_ms?: number | null;
+};
+
+type CropsResponse = {
+  kind: CropKind;
+  camera?: string | null;
+  which: CropWhich;
+  items: CropItem[];
+};
 
 export default function Explore() {
   // search field handler
@@ -68,6 +102,11 @@ export default function Explore() {
 
   const [searchFilter, setSearchFilter, searchSearchParams] =
     useApiFilterArgs<SearchFilter>(SEARCH_FILTER_ARRAY_KEYS);
+
+  const cropsKind = useMemo(() => {
+    const v = searchSearchParams?.["crops"];
+    return v === "first-person" || v === "first-face" ? (v as CropKind) : null;
+  }, [searchSearchParams]);
 
   const searchTerm = useMemo(
     () => searchSearchParams?.["query"] || "",
@@ -104,6 +143,11 @@ export default function Explore() {
       } else {
         return null;
       }
+    }
+
+    // crop mode (handled separately from SearchView)
+    if (cropsKind) {
+      return null;
     }
 
     // parameters, but no search term and not similarity
@@ -255,6 +299,86 @@ export default function Explore() {
     }
   }, [isReachingEnd, isLoadingMore, setSize, size, searchResults, searchQuery]);
 
+  // Crops paging
+  const cropsGetKey = useCallback(
+    (
+      pageIndex: number,
+      previousPageData: CropsResponse | null,
+    ): [string, Record<string, unknown>] | null => {
+      if (!cropsKind) {
+        return null;
+      }
+      if (previousPageData && !previousPageData.items.length) {
+        return null;
+      }
+
+      const baseParams: Record<string, unknown> = {
+        which: "both" as CropWhich,
+        limit: API_LIMIT,
+      };
+
+      if (pageIndex > 0 && previousPageData) {
+        const items = previousPageData.items;
+        const last = items[items.length - 1];
+        if (last && typeof last.mtime === "number") {
+          baseParams.before = last.mtime;
+        }
+      }
+
+      return [`crops/${cropsKind}`, baseParams];
+    },
+    [cropsKind],
+  );
+
+  const {
+    data: cropsPages,
+    size: cropsSize,
+    setSize: setCropsSize,
+    isValidating: cropsValidating,
+    mutate: mutateCrops,
+  } = useSWRInfinite<CropsResponse>(cropsGetKey, {
+    revalidateFirstPage: true,
+    revalidateOnFocus: true,
+    revalidateAll: false,
+  });
+
+  const cropItems = useMemo(() => {
+    if (!cropsPages) {
+      return [] as CropItem[];
+    }
+    const items = cropsPages.flatMap((p) => p.items);
+
+    // Deduplicate by camera+file to avoid repeats if mtime collisions happen
+    const seen = new Set<string>();
+    const out: CropItem[] = [];
+    for (const it of items) {
+      const k = `${it.camera}/${it.file}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(it);
+    }
+    return out;
+  }, [cropsPages]);
+
+  const isLoadingCropsInitial = cropsKind && !cropsPages && cropsValidating;
+  const isLoadingCropsMore =
+    !!cropsKind &&
+    (isLoadingCropsInitial ||
+      (cropsSize > 0 && cropsPages && typeof cropsPages[cropsSize - 1] === "undefined"));
+  const cropsIsEmpty = cropsPages?.[0]?.items.length === 0;
+  const cropsIsReachingEnd =
+    !!cropsKind &&
+    (cropsIsEmpty ||
+      (cropsPages &&
+        cropsPages[cropsPages.length - 1]?.items.length < API_LIMIT));
+
+  const loadMoreCrops = useCallback(() => {
+    if (!cropsKind) return;
+    if (!cropsIsReachingEnd && !isLoadingCropsMore) {
+      setCropsSize(cropsSize + 1);
+    }
+  }, [cropsKind, cropsIsReachingEnd, isLoadingCropsMore, setCropsSize, cropsSize]);
+
   // mutation and revalidation
 
   const { payload: wsUpdate } = useTrackedObjectUpdate();
@@ -348,14 +472,34 @@ export default function Explore() {
     return null;
   };
 
+  if (!defaultViewLoaded) {
+    return (
+      <ActivityIndicator className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
+    );
+  }
+
+  // Crop mode should not be blocked by semantic search model download/reindex.
+  if (cropsKind) {
+    return (
+      <CropsGrid
+        kind={cropsKind}
+        items={cropItems}
+        columns={gridColumns}
+        isLoading={!!isLoadingCropsMore}
+        hasMore={!cropsIsReachingEnd}
+        loadMore={loadMoreCrops}
+        refresh={mutateCrops}
+      />
+    );
+  }
+
   if (
-    !defaultViewLoaded ||
-    (config?.semantic_search.enabled &&
-      (!reindexState ||
-        !textModelState ||
-        !textTokenizerState ||
-        !visionModelState ||
-        !visionFeatureExtractorState))
+    config?.semantic_search.enabled &&
+    (!reindexState ||
+      !textModelState ||
+      !textTokenizerState ||
+      !visionModelState ||
+      !visionFeatureExtractorState)
   ) {
     return (
       <ActivityIndicator className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
@@ -365,7 +509,7 @@ export default function Explore() {
   return (
     <>
       {config?.semantic_search.enabled &&
-      (!allModelsLoaded || embeddingsReindexing) ? (
+        (!allModelsLoaded || embeddingsReindexing) ? (
         <div className="absolute inset-0 left-1/2 top-1/2 flex h-96 w-96 -translate-x-1/2 -translate-y-1/2">
           <div className="flex max-w-96 flex-col items-center justify-center space-y-3 rounded-lg bg-background/50 p-5">
             <div className="my-5 flex flex-col items-center gap-2 text-xl">
@@ -392,11 +536,11 @@ export default function Explore() {
                       <div className="text-primary-variant">
                         {reindexState.time_remaining === -1
                           ? t(
-                              "exploreIsUnavailable.embeddingsReindexing.startingUp",
-                            )
+                            "exploreIsUnavailable.embeddingsReindexing.startingUp",
+                          )
                           : t(
-                              "exploreIsUnavailable.embeddingsReindexing.estimatedTime",
-                            )}
+                            "exploreIsUnavailable.embeddingsReindexing.estimatedTime",
+                          )}
                       </div>
                       {reindexState.time_remaining >= 0 &&
                         (formatSecondsToDuration(reindexState.time_remaining) ||
@@ -468,10 +612,10 @@ export default function Explore() {
                   textTokenizerState === "error" ||
                   visionModelState === "error" ||
                   visionFeatureExtractorState === "error") && (
-                  <div className="my-3 max-w-96 text-center text-danger">
-                    {t("exploreIsUnavailable.downloadingModels.error")}
-                  </div>
-                )}
+                    <div className="my-3 max-w-96 text-center text-danger">
+                      {t("exploreIsUnavailable.downloadingModels.error")}
+                    </div>
+                  )}
                 <div className="text-center text-primary-variant">
                   {t("exploreIsUnavailable.downloadingModels.tips.context")}
                 </div>
@@ -518,5 +662,218 @@ export default function Explore() {
         />
       )}
     </>
+  );
+}
+
+type CropsGridProps = {
+  kind: CropKind;
+  items: CropItem[];
+  columns: number;
+  isLoading: boolean;
+  hasMore: boolean;
+  loadMore: () => void;
+  refresh: () => void;
+};
+
+function CropsGrid({ kind, items, columns, isLoading, hasMore, loadMore }: CropsGridProps) {
+  const apiHost = useApiHost();
+  const { t } = useTranslation(["views/explore"]);
+  const [selectedCrop, setSelectedCrop] = useState<CropItem | null>(null);
+  const [isCropDialogOpen, setIsCropDialogOpen] = useState(false);
+
+  const gridClassName = cn(
+    "grid w-full gap-2 px-1 gap-2 lg:gap-4 md:mx-2",
+    isMobileOnly && "grid-cols-2",
+    {
+      "sm:grid-cols-2": columns <= 2,
+      "sm:grid-cols-3": columns === 3,
+      "sm:grid-cols-4": columns === 4,
+      "sm:grid-cols-5": columns === 5,
+      "sm:grid-cols-6": columns === 6,
+      "sm:grid-cols-7": columns === 7,
+      "sm:grid-cols-8": columns === 8,
+    },
+  );
+
+  const observerTarget = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoading) {
+          loadMore();
+        }
+      },
+      { threshold: 1.0 },
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    observerRef.current = observer;
+    return () => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+    };
+  }, [hasMore, isLoading, loadMore]);
+
+  const dialogTimeMs = useMemo(() => {
+    if (!selectedCrop) {
+      return null;
+    }
+    if (typeof selectedCrop.timestamp_ms === "number") {
+      return selectedCrop.timestamp_ms;
+    }
+    if (typeof selectedCrop.frame_time === "number") {
+      return selectedCrop.frame_time * 1000;
+    }
+    return selectedCrop.mtime * 1000;
+  }, [selectedCrop]);
+
+  return (
+    <div className="flex size-full flex-col pt-2 md:py-2">
+      <Dialog open={isCropDialogOpen} onOpenChange={setIsCropDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedCrop ? `${selectedCrop.kind} • ${selectedCrop.camera}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCrop && (
+            <div className="flex w-full flex-col gap-4 md:flex-row">
+              <div className="w-full space-y-3 md:w-1/3">
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Label</div>
+                  <div className="text-base font-medium smart-capitalize">
+                    {selectedCrop.label || selectedCrop.kind}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Score</div>
+                  <div className="text-base font-medium">
+                    {typeof selectedCrop.score === "number"
+                      ? `${Math.round(selectedCrop.score * 100)}%`
+                      : "-"}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">ReID</div>
+                  <div className="text-base font-medium">
+                    {selectedCrop.reid_id ?? "-"}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Camera</div>
+                  <div className="text-base font-medium smart-capitalize">
+                    {selectedCrop.camera}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">When</div>
+                  <div className="text-base font-medium">
+                    {dialogTimeMs ? <TimeAgo time={dialogTimeMs} dense /> : "-"}
+                  </div>
+                  {dialogTimeMs && (
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(dialogTimeMs).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Which</div>
+                  <div className="text-base font-medium">
+                    {selectedCrop.which || "-"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex w-full items-center justify-center md:w-2/3">
+                <img
+                  className="max-h-[70vh] w-auto rounded-lg object-contain"
+                  src={`${apiHost}${selectedCrop.url}?t=${selectedCrop.mtime}`}
+                  alt={`${selectedCrop.kind} crop`}
+                />
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex flex-row items-center px-2 pb-2 text-lg smart-capitalize md:px-3">
+        {t("explore", { ns: "navigation" })}: {kind}
+      </div>
+
+      <div className="no-scrollbar flex flex-1 flex-wrap content-start gap-2 overflow-y-auto">
+        {items.length === 0 && !isLoading && (
+          <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center text-center">
+            {t("noTrackedObjects")}
+          </div>
+        )}
+
+        <div className={gridClassName}>
+          {items.map((crop) => (
+            <div key={`${crop.camera}/${crop.file}`} className="relative flex flex-col rounded-lg">
+              <div className={cn("aspect-square w-full overflow-hidden rounded-lg border")}>
+                <CropGridThumbnail
+                  apiHost={apiHost}
+                  crop={crop}
+                  onClick={() => {
+                    setSelectedCrop(crop);
+                    setIsCropDialogOpen(true);
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {items.length > 0 && (
+          <>
+            <div ref={observerTarget} className="h-10 w-full" />
+            <div className="flex h-12 w-full justify-center">
+              {hasMore && isLoading && <ActivityIndicator />}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type CropGridThumbnailProps = {
+  apiHost: string;
+  crop: CropItem;
+  onClick: () => void;
+};
+
+function CropGridThumbnail({ apiHost, crop, onClick }: CropGridThumbnailProps) {
+  const [imgRef, imgLoaded, onImgLoad] = useImageLoaded();
+
+  return (
+    <div className="relative size-full" onClick={onClick} role="button" tabIndex={0}>
+      <ActivityIndicator className={cn("absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2", imgLoaded && "hidden")} />
+      <img
+        ref={imgRef}
+        className={cn(
+          "absolute size-full cursor-pointer object-cover",
+          !imgLoaded && "invisible",
+        )}
+        draggable={false}
+        loading="lazy"
+        src={`${apiHost}${crop.url}?t=${crop.mtime}`}
+        onLoad={onImgLoad}
+        alt={`${crop.kind} crop`}
+      />
+      <div className="absolute bottom-1 left-1 z-10 rounded-lg bg-black/50 px-2 py-1 text-xs text-white">
+        {crop.camera}
+      </div>
+    </div>
   );
 }

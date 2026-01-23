@@ -23,5 +23,6 @@ export interface Event {
     ratio: number;
     type: "object" | "audio" | "manual";
     path_data: [number[], number][];
+    reid_id?: string;
   };
 }
